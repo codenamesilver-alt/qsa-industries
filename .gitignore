@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+supabase/.temp/
+web/.next/
+web/out/
+web/node_modules/
+node_modules/
+.opencode/supabase-auth.json
+
+# playwright smoke test output
+.smoke/
+.smoke-lifecycle/

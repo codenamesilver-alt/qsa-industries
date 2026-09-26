@@ -1,0 +1,21 @@
+{
+  "name": "qsaindustries",
+  "version": "1.0.0",
+  "description": "QSA Industries ERP: database migrations, pgTAP suites and a fresh-install verifier.",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:test": "node scripts/db-test.mjs",
+    "db:verify-fresh": "node scripts/db-verify-fresh.mjs",
+    "db:audit": "node scripts/e2e-audit.mjs",
+    "db:history-backfill": "node scripts/db-history-backfill.mjs",
+    "ui:smoke": "node scripts/ui-smoke.mjs",
+    "ui:lifecycle": "node scripts/ui-lifecycle.mjs",
+    "test": "npm run db:test && npm run db:verify-fresh"
+  },
+  "devDependencies": {
+    "pg": "^8.13.1",
+    "playwright": "^1.63.0"
+  }
+}

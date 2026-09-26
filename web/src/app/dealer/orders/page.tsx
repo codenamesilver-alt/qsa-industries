@@ -1,0 +1,59 @@
+import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
+import { PortalShell } from "../../../components/portal-shell";
+import { requireProfile } from "../../../lib/auth";
+import { getDealerOrders } from "../../../lib/data";
+import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
+
+export default async function DealerOrdersPage() {
+  const profile = await requireProfile(["dealer"]);
+  const orders = await getDealerOrders();
+  const open = orders.filter((order) => !["invoiced", "rejected"].includes(order.status));
+  const closed = orders.filter((order) => ["invoiced", "rejected"].includes(order.status));
+
+  return (
+    <PortalShell
+      description="Follow every order from submission through approval, dispatch, invoicing, and payment status."
+      eyebrow="Dealer portal / orders"
+      profile={profile}
+      title="See every step."
+    >
+      <section className="grid gap-4 sm:grid-cols-2">
+        <MetricCard detail="Still in progress" label="Open orders" value={String(open.length).padStart(2, "0")} />
+        <MetricCard detail="Invoiced or rejected" label="Closed orders" value={String(closed.length).padStart(2, "0")} />
+      </section>
+      <div className="mt-6 space-y-4">
+        {orders.length ? (
+          orders.map((order) => (
+            <DataPanel key={order.id} title={`Order ${order.id.slice(0, 8)}`} description={`Submitted ${formatDate(order.created_at)}`}>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(order.status)}`}>{statusLabel(order.status)}</span>
+                  {order.dispatch_date ? <span className="text-xs text-[#718075]">Dispatch {formatDate(order.dispatch_date)}</span> : null}
+                  {order.tracking_note ? <span className="text-xs text-[#718075]">{order.tracking_note}</span> : null}
+                </div>
+                <p className="text-2xl font-semibold tracking-[-0.04em]">₹{formatNumber(order.total_amount)}</p>
+              </div>
+              {order.order_items?.length ? (
+                <div className="mt-5 divide-y divide-[#e8ede6]">
+                  {order.order_items.map((item) => (
+                    <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0" key={item.id}>
+                      <div>
+                        <p className="font-semibold">{item.product?.name ?? "Product"}</p>
+                        <p className="mt-1 text-xs text-[#819083]">{item.product?.sku}</p>
+                      </div>
+                      <p className="text-sm">{formatNumber(item.quantity)} × ₹{formatNumber(item.unit_price)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4"><EmptyState message="Order lines are not visible." /></div>
+              )}
+            </DataPanel>
+          ))
+        ) : (
+          <DataPanel title="Order history"><EmptyState message="No orders yet." /></DataPanel>
+        )}
+      </div>
+    </PortalShell>
+  );
+}
