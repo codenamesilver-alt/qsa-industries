@@ -42,6 +42,7 @@ npm run db:migrate           # apply pending migrations, record them
 npm run db:test              # run the pgTAP suites against the target database
 npm run db:verify-fresh      # prove a from-scratch install matches the repository
 npm run db:history-backfill  # repair incomplete migration-history rows
+npm run db:migration-redo    # re-apply one already-applied migration from its file
 npm run db:audit             # read-only snapshot of dealer exposure, stock and counts
 npm test                     # db:test, then db:verify-fresh
 ```
@@ -80,18 +81,37 @@ re-run. It touches the history table only.
 **Do not use `supabase db reset` on this project.** The CLI splits a migration
 into individual statements and replays the stored `statements`; this runner
 sends each file as one multi-statement query and records the file as a single
-element. A reset would find 18 recorded versions and replay almost no SQL. Use
+element. A reset would find 21 recorded versions and replay almost no SQL. Use
 `npm run db:verify-fresh`, which replays the files themselves, and treat the CLI
 as unavailable for this database. Two of the live rows were originally applied by
 the CLI, which is why the table shape and naming are pinned to match it.
+
+### Correcting a migration you already applied
+
+While a migration is still in development, editing its file leaves the database
+and the repository disagreeing. `db:migration-redo` resolves that by dropping the
+history row and replaying the file:
+
+```bash
+npm run db:migration-redo -- 20260925092500
+```
+
+It refuses if the version is not recorded (use `db:migrate` for that) and refuses
+if any later migration is recorded on top of it, since those were applied against
+a schema that is about to change; `--force` overrides that second guard. This is
+the controlled equivalent of `supabase migration repair` plus a re-apply, which is
+unavailable here for the reason above.
+
+Never use it on a migration that has been deployed anywhere real. Correcting
+deployed history means a new forward migration, not a rewrite.
 
 ## Reading live state
 
 `npm run db:audit` is read-only — every statement in it is a `SELECT`. It prints
 the exposure breakdown for one dealer, orders grouped by status, the most recent
-orders, the rows the lifecycle test created, the SKU's stock, and the table
-counts. Use it to explain a number rather than guess at it. Two details it exists
-to make legible:
+orders, the rows the lifecycle test created, every product's stock level against
+its own movement ledger, and the table counts. Use it to explain a number rather
+than guess at it. Two details it exists to make legible:
 
 - **Exposure drops when an order is dispatched, and that is correct.**
   `private.order_exposure` counts only `pending`, `pending_director_approval` and
@@ -99,10 +119,31 @@ to make legible:
   while no invoice exists yet, so exposure can fall by a full order total with no
   money changing hands. The breakdown in the audit output is what distinguishes
   that from real drift.
-- **`stock_levels` and the movement ledger can disagree, and the trigger is why.**
-  `stock_movements_apply_level` is `AFTER INSERT`, so deleting a movement does
-  not put the level back. The ledger is also not the source of truth for opening
-  stock, so its net never has to match `current_quantity`.
+- **Every stock level must equal the signed sum of its movements.**
+  `stock_movements_apply_level` is `AFTER INSERT OR UPDATE OR DELETE`, so an
+  insert applies a movement's effect, a delete applies its negation, and an edit
+  applies the difference. The level is therefore a pure function of the ledger
+  and cannot drift from it. An update that only rewrites bookkeeping columns such
+  as `created_at` nets to zero and leaves stock alone, which is what lets the
+  backdated demo timeline replay from scratch.
+
+  The ledger is deliberately *not* append-only. Whether an ERP should permit
+  history edits at all is a policy decision; what the trigger rules out is a
+  silent desync that looks self-healing. Enforcing immutability on `created_at`
+  would break `20260925092200` and `20260925092400`, which rewrite movement
+  timestamps to build the demo timeline.
+
+  Opening stock is recorded as movements with
+  `source = 'opening_balance'`, dated before the product's first movement. The
+  seed migrations used to set `stock_levels` to hand-picked numbers and write a
+  history around them, which left eight of eleven products unable to explain
+  their own balance — LAYER-01 carried 1100 against a movement total of -100.
+  `20260925092700` records the difference, changing no level, so the demo figures
+  are untouched and finally auditable.
+
+  `db:audit` prints the comparison for every product and `db:verify-fresh` asserts
+  it on a fresh install, so a regression fails a test rather than waiting to be
+  noticed in a number.
 
 ### Writing tests
 
@@ -232,10 +273,14 @@ Use `npm run db:audit` afterwards to see what a run left behind.
 
 `.github/workflows/ci.yml` runs two jobs on every push and pull request:
 
-- **migrations and pgTAP** — a `postgres:16` service, then the scripts'
-  `node --check`, `db:history-backfill`, and `npm test`. The fresh-install replay
-  is the point: a migration that only works against the already-migrated live
-  project fails here.
+- **migrations and pgTAP** — a `postgres:17` service, pinned to the live project's
+  major version, then the scripts' `node --check` and `npm test`. The fresh-install
+  replay is the point: a migration that only works against the already-migrated
+  live project fails here. `db:history-backfill` is deliberately absent — it
+  repairs a live project's history, and this database is empty, so the table it
+  queries does not exist yet. The history shape, recorded SQL and naming
+  convention are asserted by `db:verify-fresh` during `npm test` instead, against
+  a database actually built by replaying the migrations.
 - **lint, typecheck and build** — the `web` app with placeholder public Supabase
   env values. No real credentials are needed or wanted; the two variables are
   inlined into the client bundle.

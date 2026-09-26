@@ -66,29 +66,16 @@ console.log(`order ${id.slice(0, 8)} is ${order.status}; ${b.items} line(s), ${b
 await c.query("begin");
 try {
   if (b.movements > 0) {
+    // stock_movements_apply_level is after insert or update or delete, so
+    // removing the rows puts the levels back by itself. It used to be insert
+    // only, which is why this script had to restore them by hand and why an
+    // earlier run left BROILER-01 understated until it was corrected by hand.
     const removed = await c.query(
       `delete from public.stock_movements where reference_id = $1 and source = 'sales'
        returning product_id, quantity, movement_type`,
       [id],
     );
-    console.log(`removed ${removed.rowCount} stock movement(s)`);
-
-    // stock_movements_apply_level is AFTER INSERT FOR EACH ROW, so deleting a
-    // movement does not put stock_levels back. Undo the level change here, or
-    // the reversal would leave stock permanently understated.
-    for (const mv of removed.rows) {
-      const sign = mv.movement_type === "in" ? -1 : 1;
-      await c.query(
-        `update public.stock_levels
-         set current_quantity = current_quantity + ($2 * $3), updated_at = now()
-         where product_id = $1`,
-        [mv.product_id, sign, mv.quantity],
-      );
-      console.log(
-        `restored stock_levels ${mv.product_id.slice(0, 8)} by ${sign * Number(mv.quantity)} ` +
-          `(${mv.movement_type} of ${mv.quantity})`,
-      );
-    }
+    console.log(`removed ${removed.rowCount} stock movement(s); the trigger restored the levels`);
   }
   await c.query(`delete from public.order_approvals where order_id = $1`, [id]);
   await c.query(`delete from public.order_items where order_id = $1`, [id]);

@@ -10,6 +10,7 @@
     "db:verify-fresh": "node scripts/db-verify-fresh.mjs",
     "db:audit": "node scripts/e2e-audit.mjs",
     "db:history-backfill": "node scripts/db-history-backfill.mjs",
+    "db:migration-redo": "node scripts/db-migration-redo.mjs",
     "ui:smoke": "node scripts/ui-smoke.mjs",
     "ui:lifecycle": "node scripts/ui-lifecycle.mjs",
     "test": "npm run db:test && npm run db:verify-fresh"

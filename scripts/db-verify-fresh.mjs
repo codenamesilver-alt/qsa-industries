@@ -121,6 +121,25 @@ const CHECKS = [
     EXPECTED.broilerFeedStock,
   ],
   [
+    // stock_movements_apply_level keeps every level a pure function of the
+    // ledger, so a fresh install that cannot reconcile is a broken install, not
+    // a cosmetic drift. This is the same check db:audit prints.
+    "every stock level reconciles with its ledger",
+    `select count(*)::int v
+       from (
+         select p.id,
+                coalesce(sl.current_quantity, 0) - coalesce(mv.movement_sum, 0) as gap
+         from products p
+         left join stock_levels sl on sl.product_id = p.id
+         left join lateral (
+           select sum(case m.movement_type when 'in' then m.quantity else -m.quantity end) as movement_sum
+           from stock_movements m where m.product_id = p.id
+         ) mv on true
+       ) gaps
+      where gap <> 0`,
+    0,
+  ],
+  [
     "Green Valley has credit headroom",
     `select round((coalesce(credit_limit_override, credit_limit)
        - private.order_exposure(id))::numeric, 2)::int v

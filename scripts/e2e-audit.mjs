@@ -110,15 +110,49 @@ if (e2e.rowCount === 0) {
 
 // current_quantity lives on stock_levels; available_quantity is derived per dealer
 // on the RLS-scoped catalog view, so they are two different numbers on purpose.
-const catalog = await db.query(
-  `select (select sl.current_quantity::numeric
-             from public.stock_levels sl join public.products p on p.id = sl.product_id
-            where p.sku = $1) as current_quantity,
-          (select available_quantity::numeric from public.dealer_catalog where sku = $1) as available_quantity`,
+//
+// The stock_movements_apply_level trigger (after insert or update or delete) makes
+// current_quantity a pure function of the ledger, so the level of every product
+// must equal the signed sum of its movements. Checking that for all products
+// rather than one spot SKU is what would have caught the original insert-only
+// trigger, and it is the check to re-run after anything edits movements.
+const levels = await db.query(
+  `select p.sku,
+          p.name,
+          coalesce(sl.current_quantity, 0)::numeric as current_quantity,
+          coalesce(sum(case m.movement_type when 'in' then m.quantity else -m.quantity end), 0)::numeric as ledger
+   from public.products p
+   left join public.stock_levels sl on sl.product_id = p.id
+   left join public.stock_movements m on m.product_id = p.id
+   group by p.sku, p.name, sl.current_quantity
+   order by p.sku`,
+);
+
+console.log(`\nstock levels vs ledger (${levels.rowCount} products)`);
+let drift = 0;
+for (const r of levels.rows) {
+  const diff = Number(r.current_quantity) - Number(r.ledger);
+  const ok = diff === 0;
+  if (!ok) drift += 1;
+  console.log(
+    `  ${ok ? "  " : "!!"} ${r.sku.padEnd(18)} level ${String(r.current_quantity).padStart(9)}  ` +
+      `ledger ${String(r.ledger).padStart(9)}  ${r.name}`,
+  );
+}
+console.log(
+  drift === 0
+    ? "  every level equals the signed sum of its movements"
+    : `  DRIFT: ${drift} product(s) where the level disagrees with the ledger`,
+);
+
+const available = await db.query(
+  "select available_quantity::numeric as available_quantity from public.dealer_catalog where sku = $1",
   [SKU],
 );
-const c = catalog.rows[0] ?? {};
-console.log(`\n${SKU}: current ${c.current_quantity ?? "?"}, available ${c.available_quantity ?? "?"}`);
+console.log(
+  `\n${SKU}: dealer-available ${available.rows[0]?.available_quantity ?? "?"} ` +
+    `(RLS catalog view, distinct from the level above)`,
+);
 
 const counts = await db.query(
   `select (select count(*)::int from public.orders) as orders,
