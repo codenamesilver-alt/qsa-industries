@@ -1,27 +1,48 @@
 import Link from "next/link";
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
+import { DealerCreditForm } from "../../../components/dealer-credit-form";
 import { DealerPaymentForm, GenerateInvoiceButton, PaymentForm } from "../../../components/finance-actions";
+import { FinanceSettingsForm } from "../../../components/finance-settings-form";
 import { PortalShell } from "../../../components/portal-shell";
 import { requireProfile } from "../../../lib/auth";
-import { getDealerExposure, getDealerLedger, getInvoices, getOrders, getPayments } from "../../../lib/data";
+import {
+  getDealerExposure,
+  getDealerInvoiceAgeing,
+  getDealerLedger,
+  getFinanceSettings,
+  getInvoices,
+  getOrders,
+  getPayments,
+  getDealers,
+  getSalesReps,
+} from "../../../lib/data";
 import { formatDate, formatNumber } from "../../../lib/format";
 
 const roles = ["admin", "finance"] as const;
 
 export default async function FinancePage() {
   const profile = await requireProfile(roles);
-  const [orders, invoices, payments, ledger, exposure] = await Promise.all([
+  const isAdmin = profile.role === "admin";
+  const [orders, invoices, payments, ledger, exposure, ageing, settings, dealers] = await Promise.all([
     getOrders(),
     getInvoices(),
     getPayments(),
     getDealerLedger(),
     getDealerExposure(),
+    getDealerInvoiceAgeing(),
+    getFinanceSettings(),
+    getDealers(),
   ]);
+  // private.can_view_user returns true for an admin and only self for everyone
+  // else, so the rep picker is read here rather than letting the query fail for
+  // finance, who can manage commercial columns but never reassign a rep.
+  const salesReps = isAdmin ? await getSalesReps() : [];
   const invoiceQueue = orders.filter((order) => order.status === "dispatched");
   const ledgerByInvoice = new Map(ledger.map((row) => [row.invoice_id, row]));
   const invoicedTotal = invoices.reduce((sum, invoice) => sum + Number(invoice.total_amount), 0);
   const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const outstanding = ledger.reduce((sum, row) => sum + Number(row.outstanding_amount), 0);
+  const pastGrace = ageing.filter((row) => Number(row.bucket_1_amount) + Number(row.bucket_2_amount) + Number(row.bucket_3_amount) + Number(row.bucket_4_plus_amount) > 0);
 
   return (
     <PortalShell
@@ -137,6 +158,111 @@ export default async function FinancePage() {
           )}
         </DataPanel>
       </div>
+      <div className="mt-6">
+        <DataPanel
+          description="Buckets are driven by the grace period and thresholds set below, so an invoice only ages once the grace period has passed."
+          title="Invoice ageing"
+        >
+          {ageing.length ? (
+            <>
+              {pastGrace.length ? (
+                <p className="mb-4 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm text-[#8b6412]">
+                  {pastGrace.length} dealer{pastGrace.length === 1 ? "" : "s"} carry balance beyond the grace period.
+                </p>
+              ) : null}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[820px] text-left text-sm">
+                  <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
+                    <tr>
+                      <th className="pb-3 pr-4 font-bold">Dealer</th>
+                      <th className="pb-3 pr-4 font-bold">Open</th>
+                      <th className="pb-3 pr-4 font-bold">Outstanding</th>
+                      <th className="pb-3 pr-4 font-bold">Current</th>
+                      <th className="pb-3 pr-4 font-bold">Bucket 1</th>
+                      <th className="pb-3 pr-4 font-bold">Bucket 2</th>
+                      <th className="pb-3 pr-4 font-bold">Bucket 3</th>
+                      <th className="pb-3 font-bold">Bucket 4+</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e8ede6]">
+                    {ageing.map((row) => (
+                      <tr key={row.dealer_id}>
+                        <td className="py-4 pr-4 font-semibold">{row.dealer_name}</td>
+                        <td className="py-4 pr-4 text-[#5d6b60]">{formatNumber(row.open_invoice_count)}</td>
+                        <td className="py-4 pr-4 font-semibold">₹{formatNumber(row.total_outstanding)}</td>
+                        <td className="py-4 pr-4 text-[#5d6b60]">₹{formatNumber(row.current_amount)}</td>
+                        <td className="py-4 pr-4 text-[#8b6412]">₹{formatNumber(row.bucket_1_amount)}</td>
+                        <td className="py-4 pr-4 text-[#a33a2b]">₹{formatNumber(row.bucket_2_amount)}</td>
+                        <td className="py-4 pr-4 text-[#a33a2b]">₹{formatNumber(row.bucket_3_amount)}</td>
+                        <td className="py-4 text-[#a33a2b]">₹{formatNumber(row.bucket_4_plus_amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <EmptyState message="No dealer invoice ageing is visible." />
+          )}
+        </DataPanel>
+      </div>
+
+      <div className="mt-6">
+        <DataPanel
+          description="Ageing thresholds and whether credit exposure counts invoices that are not yet due."
+          title="Ageing and credit settings"
+        >
+          <FinanceSettingsForm settings={settings} />
+        </DataPanel>
+      </div>
+
+      <div className="mt-6">
+        <DataPanel
+          description={
+            isAdmin
+              ? "You can change commercial columns and reassign the sales rep."
+              : "You can change commercial columns. Reassigning a sales rep is an admin-only decision."
+          }
+          title="Dealer credit and region"
+        >
+          {dealers.length ? (
+            <div className="space-y-5">
+              {dealers.map((dealer) => (
+                <div className="rounded-2xl border border-[#e8ede6] p-4" key={dealer.id}>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{dealer.name}</p>
+                      <p className="mt-1 text-xs text-[#819083]">
+                        {dealer.city ?? "—"}
+                        {dealer.state ? `, ${dealer.state}` : ""}
+                        {dealer.region ? ` · ${dealer.region} region` : " · no region"}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                        dealer.status === "active"
+                          ? "border-[#b9d98a] bg-[#eff8df] text-[#4e741d]"
+                          : "border-[#f2b8ad] bg-[#fff0ed] text-[#a33a2b]"
+                      }`}
+                    >
+                      {dealer.status}
+                    </span>
+                  </div>
+                  <DealerCreditForm
+                    canAssignRep={isAdmin}
+                    canManageCommercial
+                    dealer={dealer}
+                    salesReps={salesReps}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState message="No dealer accounts are visible." />
+          )}
+        </DataPanel>
+      </div>
+
       <div className="mt-6">
         <DataPanel description="Recent receipts by dealer and invoice." title="Payment register">
           {payments.length ? (

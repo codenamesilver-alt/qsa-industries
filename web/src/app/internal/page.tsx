@@ -4,7 +4,7 @@ import { requireProfile } from "../../lib/auth";
 import { getInventoryDashboard, getOrders, getProductionSummary, getStatusSummary } from "../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../lib/format";
 
-const internalRoles = ["admin", "production_manager", "inventory_manager", "logistics", "finance"] as const;
+const internalRoles = ["admin", "production_manager", "inventory_manager", "qc_staff", "logistics", "finance"] as const;
 
 export default async function InternalPortalPage() {
   const profile = await requireProfile(internalRoles);
@@ -32,44 +32,70 @@ export default async function InternalPortalPage() {
         <MetricCard detail="Pending through dispatch" label="Open orders" value={String(openOrders.length).padStart(2, "0")} />
       </section>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <DataPanel description="Visible production performance by day and product." title="Production pulse">
-          {production.length ? (
-            <div className="space-y-3">
-              {production.slice(0, 6).map((row) => (
-                <div className="flex items-center justify-between gap-4 border-b border-[#e8ede6] pb-3 last:border-0 last:pb-0" key={`${row.run_date}-${row.product_id}`}>
-                  <div>
-                    <p className="font-semibold">{row.product_name}</p>
-                    <p className="mt-1 text-xs text-[#819083]">{formatDate(row.run_date)}</p>
+        {profile.role === "qc_staff" ? (
+          <DataPanel description="Every run awaiting a quality verdict. Record a pass, hold, or fail on the Quality page." title="QC queue">
+            {production.length ? (
+              <div className="space-y-3">
+                {production.slice(0, 6).map((row) => (
+                  <div className="flex items-center justify-between gap-4 border-b border-[#e8ede6] pb-3 last:border-0 last:pb-0" key={`${row.run_date}-${row.product_id}`}>
+                    <div>
+                      <p className="font-semibold">{row.product_name}</p>
+                      <p className="mt-1 text-xs text-[#819083]">{formatDate(row.run_date)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatNumber(row.total_output)} output</p>
+                      <p className="mt-1 text-xs text-[#819083]">{row.yield_ratio ? `${row.yield_ratio} yield` : "Yield pending"}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold">{formatNumber(row.total_output)} output</p>
-                    <p className="mt-1 text-xs text-[#819083]">{row.yield_ratio ? `${row.yield_ratio} yield` : "Yield pending"}</p>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="No production runs visible in your scope." />
+            )}
+          </DataPanel>
+        ) : (
+          <DataPanel description="Visible production performance by day and product." title="Production pulse">
+            {production.length ? (
+              <div className="space-y-3">
+                {production.slice(0, 6).map((row) => (
+                  <div className="flex items-center justify-between gap-4 border-b border-[#e8ede6] pb-3 last:border-0 last:pb-0" key={`${row.run_date}-${row.product_id}`}>
+                    <div>
+                      <p className="font-semibold">{row.product_name}</p>
+                      <p className="mt-1 text-xs text-[#819083]">{formatDate(row.run_date)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatNumber(row.total_output)} output</p>
+                      <p className="mt-1 text-xs text-[#819083]">{row.yield_ratio ? `${row.yield_ratio} yield` : "Yield pending"}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState message="No production runs visible in current role scope." />
-          )}
-        </DataPanel>
-        <DataPanel description="Order movement across the full lifecycle." title="Order board">
-          {statuses.length ? (
-            <div className="space-y-3">
-              {statuses.map((row) => (
-                <div className="flex items-center justify-between gap-4" key={row.status}>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(row.status)}`}>{statusLabel(row.status)}</span>
-                  <div className="text-right">
-                    <p className="font-semibold">{formatNumber(row.order_count)} orders</p>
-                    <p className="mt-1 text-xs text-[#819083]">₹{formatNumber(row.total_amount)}</p>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="No production runs visible in current role scope." />
+            )}
+          </DataPanel>
+        )}
+        {profile.role === "qc_staff" ? null : (
+          <DataPanel description="Order movement across the full lifecycle." title="Order board">
+            {statuses.length ? (
+              <div className="space-y-3">
+                {statuses.map((row) => (
+                  <div className="flex items-center justify-between gap-4" key={row.status}>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(row.status)}`}>{statusLabel(row.status)}</span>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatNumber(row.order_count)} orders</p>
+                      <p className="mt-1 text-xs text-[#819083]">₹{formatNumber(row.total_amount)}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState message="No orders visible in current role scope." />
-          )}
-        </DataPanel>
+                ))}
+              </div>
+            ) : (
+              <EmptyState message="No orders visible in current role scope." />
+            )}
+          </DataPanel>
+        )}
       </div>
+      {profile.role === "qc_staff" ? null : (
       <div className="mt-6">
         <DataPanel description="Low-stock positions update from stock levels after every movement." title="Inventory signals">
           {lowStock.length ? (
@@ -87,6 +113,7 @@ export default async function InternalPortalPage() {
           )}
         </DataPanel>
       </div>
+      )}
     </PortalShell>
   );
 }

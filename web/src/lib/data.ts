@@ -34,10 +34,87 @@ export type StockMovementRow = {
   product_id: string;
   quantity: number | string;
   movement_type: "in" | "out";
-  source: "production" | "sales" | "adjustment";
+  source: "production" | "sales" | "adjustment" | "opening_balance" | "purchase";
   reason: string | null;
   created_at: string;
   product?: { name: string; sku: string } | null;
+};
+
+export type ExpiringBatchRow = {
+  batch_id: string;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  batch_code: string;
+  manufacture_date: string | null;
+  expiry_date: string;
+  available_quantity: number | string;
+  days_remaining: number | string;
+  expiry_status: "expired" | "critical" | "warning" | "ok";
+};
+
+export type PurchaseOrderLineRow = {
+  id: string;
+  purchase_order_id: string;
+  product_id: string;
+  quantity: number | string;
+  unit_price: number | string;
+  line_total: number | string;
+  quantity_received: number | string;
+  products?: { name: string; sku: string } | null;
+};
+
+export type PurchaseOrderRow = {
+  id: string;
+  po_number: string;
+  supplier_name: string;
+  supplier_gstin: string | null;
+  status: "draft" | "ordered" | "partially_received" | "received" | "cancelled";
+  order_date: string;
+  expected_date: string | null;
+  total_amount: number | string;
+  notes: string | null;
+  received_at: string | null;
+  purchase_order_lines?: PurchaseOrderLineRow[] | null;
+};
+
+export type DealerAgeingRow = {
+  dealer_id: string;
+  dealer_name: string;
+  open_invoice_count: number | string;
+  total_outstanding: number | string;
+  current_amount: number | string;
+  bucket_1_amount: number | string;
+  bucket_2_amount: number | string;
+  bucket_3_amount: number | string;
+  bucket_4_plus_amount: number | string;
+};
+
+export type FinanceSettingsRow = {
+  id: boolean;
+  gst_rate: number | string;
+  company_state: string | null;
+  price_includes_gst: boolean;
+  ageing_grace_days: number | string | null;
+  ageing_bucket_1_days: number | string | null;
+  ageing_bucket_2_days: number | string | null;
+  ageing_bucket_3_days: number | string | null;
+  credit_counts_current_invoices: boolean;
+  updated_at: string;
+};
+
+export type DealerRow = {
+  id: string;
+  name: string;
+  region: string | null;
+  status: "active" | "suspended";
+  credit_limit: number | string;
+  credit_limit_override: number | string | null;
+  sales_rep_id: string | null;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  state: string | null;
 };
 
 export type ProductRow = {
@@ -368,4 +445,156 @@ export async function getDealerCredit(dealerId: string) {
     outstanding_invoices: number | string;
     available_credit: number | string;
   } | null;
+}
+
+// --- 20260926 surfaces -------------------------------------------------------
+//
+// Each of these reads a view or table that already existed in the database but
+// had no caller in the app, so every one of them is a new screen rather than a
+// new query.
+
+export async function getExpiringBatches() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("expiring_batches")
+    .select("*")
+    .order("days_remaining")
+    .order("sku")
+    .order("batch_code")
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []) as ExpiringBatchRow[];
+}
+
+export async function getPurchaseOrders() {
+  const supabase = await createClient();
+  const rows = await fetchAll<PurchaseOrderRow>((from, to) =>
+    supabase
+      .from("purchase_orders")
+      .select("*, purchase_order_lines(*, products(name, sku))")
+      .order("order_date", { ascending: false })
+      .order("id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getDealerInvoiceAgeing() {
+  const supabase = await createClient();
+  const rows = await fetchAll<DealerAgeingRow>((from, to) =>
+    supabase
+      .from("dealer_invoice_ageing")
+      .select("*")
+      .order("total_outstanding", { ascending: false })
+      .order("dealer_id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getFinanceSettings() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("finance_settings").select("*").eq("id", true).maybeSingle();
+  if (error) throw error;
+  return data as FinanceSettingsRow | null;
+}
+
+// The commercial columns on dealers are guarded in the database, so this list is
+// only reachable by admin and finance. It carries credit_limit_override rather
+// than the raw limit, because the override is the number that actually governs
+// the account and a screen that showed the base limit would misreport a dealer's
+// real headroom.
+export async function getDealers() {
+  const supabase = await createClient();
+  const rows = await fetchAll<DealerRow>((from, to) =>
+    supabase
+      .from("dealers")
+      .select(
+        "id, name, region, status, credit_limit, credit_limit_override, sales_rep_id, phone, email, city, state",
+      )
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+// Proxy ordering needs the dealers a sales rep is mapped to. The database
+// enforces that same set inside create_dealer_order, so this list is a
+// convenience for the picker, not the authority: the RPC still refuses a dealer
+// that is not mapped, which stage11 asserts.
+export async function getMappedDealers() {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return [] as DealerRow[];
+
+  const rows = await fetchAll<DealerRow>((from, to) =>
+    supabase
+      .from("dealers")
+      .select(
+        "id, name, region, status, credit_limit, credit_limit_override, sales_rep_id, phone, email, city, state",
+      )
+      .eq("sales_rep_id", userId)
+      .eq("status", "active")
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+// An admin enters proxy orders for any account, so the picker is every active
+// dealer rather than a mapped set. An admin is not themselves mapped to anything,
+// which is exactly why this cannot reuse getMappedDealers(): it would return an
+// empty list and the order would go out with no dealer named.
+export async function getActiveDealers() {
+  const supabase = await createClient();
+  const rows = await fetchAll<DealerRow>((from, to) =>
+    supabase
+      .from("dealers")
+      .select(
+        "id, name, region, status, credit_limit, credit_limit_override, sales_rep_id, phone, email, city, state",
+      )
+      .eq("status", "active")
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+// create_purchase_order only accepts products that are not sellable, so the
+// picker needs the raw-material half of the catalogue rather than getProducts(),
+// which is the sellable half.
+export async function getRawMaterialProducts() {
+  const supabase = await createClient();
+  const rows = await fetchAll<ProductRow>((from, to) =>
+    supabase
+      .from("products")
+      .select("id, sku, name, category, unit_of_measure, price, is_sellable")
+      .eq("active", true)
+      .eq("is_sellable", false)
+      .order("name")
+      .order("id")
+      .range(from, to),
+  );
+  return rows;
+}
+
+// Only an admin can read the full user list, because private.can_view_user
+// returns true unconditionally for an admin and falls back to "only yourself"
+// for everyone else. That matches the guard: reassignment of sales_rep_id is an
+// admin-only decision, so only an admin needs the rep picker at all.
+export async function getSalesReps() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, full_name, role")
+    .in("role", ["sales_rep", "sales_manager", "sales_director"])
+    .eq("is_active", true)
+    .order("full_name")
+    .order("id");
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; full_name: string; role: string }>;
 }

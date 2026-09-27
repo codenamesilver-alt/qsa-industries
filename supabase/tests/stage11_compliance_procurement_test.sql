@@ -1,5 +1,5 @@
 begin;
-select plan(113);
+select plan(157);
 
 -- Tests for everything added in the 20260926 migration block: quality control
 -- segregation of duties, proxy ordering and requested delivery dates, dealer
@@ -30,6 +30,8 @@ select plan(113);
 
 create temporary table compliance_ids (
   production_run_id uuid,
+  first_run_id uuid,
+  second_run_id uuid,
   purchase_order_id uuid,
   purchase_line_maize uuid,
   purchase_line_soy uuid,
@@ -49,7 +51,7 @@ create temporary table compliance_baseline (
   product_id uuid primary key,
   qty numeric
 );
-grant insert, select on compliance_baseline to authenticated;
+grant insert, select, delete on compliance_baseline to authenticated;
 
 -- ===========================================================================
 -- A. Quality control segregation of duties
@@ -102,23 +104,34 @@ select throws_ok(
 
 -- The verdict itself: QC may set qc_status on a run created by the production
 -- manager, and it is that cross-user write the RLS policy exists to permit.
+--
+-- The manager starts a run of their own here rather than adopting whatever run
+-- happens to be lying around. Adopting one made the suite a consumer of seed
+-- state: every invocation finalised a run it did not create, so each run of the
+-- suite left one fewer run with an open verdict and the next invocation failed
+-- with 'the suite needs a run with an open verdict'.
+--
+-- The rows are inserted directly instead of through create_production_run: what
+-- is under test is who may set a verdict, not how a shift is costed, and the RPC
+-- would issue raw material for a run this suite has no interest in. Both runs are
+-- removed at the end of this section, so the suite leaves stock exactly as it
+-- found it and can be run against a database it has not visited before.
 reset role;
 
 do $$
 declare
   v_run uuid;
 begin
-  select id into v_run
-  from public.production_runs
-  where created_by = 'bddaf4a6-c4c0-4637-8369-c3cb7338098d'
-  order by created_at desc
-  limit 1;
+  insert into public.production_runs (
+    product_id, quantity_produced, shift, run_date, qc_status, created_by
+  )
+  values (
+    '30000000-0000-4000-8000-000000000001', 1200, 'morning',
+    current_date, 'pending', 'bddaf4a6-c4c0-4637-8369-c3cb7338098d'
+  )
+  returning id into v_run;
 
-  if v_run is null then
-    select id into v_run from public.production_runs order by created_at desc limit 1;
-  end if;
-
-  update compliance_ids set production_run_id = v_run;
+  update compliance_ids set production_run_id = v_run, first_run_id = v_run;
 end
 $$;
 
@@ -233,24 +246,25 @@ select is(
 
 -- A failed verdict has to say why. This needs a run whose verdict is still open:
 -- the run certified above is now 'passed', and reopening a finalized verdict is
--- refused first, which is the rule two assertions further down.
+-- refused first, which is the rule two assertions further down. A second run of
+-- the suite's own is started for this, so it never has to borrow one.
 reset role;
 
 do $$
 declare
   v_pending uuid;
 begin
-  select id into v_pending
-  from public.production_runs
-  where qc_status = 'pending'
-  order by created_at desc
-  limit 1;
+  insert into public.production_runs (
+    product_id, quantity_produced, shift, run_date, qc_status, created_by
+  )
+  values (
+    '30000000-0000-4000-8000-000000000006', 1200, 'evening',
+    current_date, 'pending', 'bddaf4a6-c4c0-4637-8369-c3cb7338098d'
+  )
+  returning id into v_pending;
 
-  if v_pending is null then
-    raise exception 'the suite needs a run with an open verdict';
-  end if;
-
-  update compliance_ids set production_run_id = v_pending;
+  update compliance_ids
+  set second_run_id = v_pending, production_run_id = v_pending;
 end
 $$;
 
@@ -473,14 +487,70 @@ select is(
 );
 
 -- Renaming a dealer is not outside finance's granted columns, so this is asserted
--- on the column that is: sales_rep_id has never been writable by the application
--- role, because reassigning a dealer between reps is an admin decision.
+-- on the column that is: sales_rep_id is an admin decision, and finance must be
+-- refused by a rule rather than by the absence of a grant.
+--
+-- The role is set here explicitly because the section above leaves the suite on
+-- whichever identity it last used. Left implicit, this assertion was really
+-- testing qc_staff and passing for a third unrelated reason.
+--
+-- The expectation changed in 20260926100700 from 42501 to P0001, and the change is
+-- the point rather than a correction. This used to pass because authenticated held
+-- no UPDATE grant on dealers at all, so every write failed on privilege before any
+-- rule was consulted. That is not enforcement: the same missing grant is why the
+-- finance credit override had never worked either. Now that the write path exists,
+-- the refusal comes from private.guard_dealer_commercial_columns.
+set local role authenticated;
+set local request.jwt.claim.sub = '22145f21-ebba-4e23-8bc5-b9650307a4ea';
+
+-- The target rep is chosen against the row's current value, because a probe that
+-- writes the value already stored is not a probe. The guard is a difference check,
+-- so setting sales_rep_id to what it already holds correctly does nothing at all,
+-- and the original version of this assertion was silently doing exactly that: the
+-- seed already had this dealer on that rep, so the write was a no-op and only the
+-- privilege error was ever being observed.
 select throws_ok(
-  $$update public.dealers set sales_rep_id = '10000000-0000-4000-8000-000000000006'
+  $$update public.dealers
+       set sales_rep_id = case
+         when sales_rep_id = '10000000-0000-4000-8000-000000000006'::uuid
+           then '10000000-0000-4000-8000-000000000007'::uuid
+         else '10000000-0000-4000-8000-000000000006'::uuid
+       end
      where id = '20000000-0000-4000-8000-000000000002'$$,
-  '42501',
-  null,
+  'P0001',
+  'Only an admin can reassign a dealer to a different sales rep',
   'finance cannot reassign a dealer to a different sales rep'
+);
+
+-- And the accepting side of the same rule, so sales_rep_id is not simply frozen
+-- for everyone. Asserted as the admin, not from the owner role: an owner bypasses
+-- both the grant and the guard, so a test run from there would pass no matter what
+-- the rule said.
+set local request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
+
+reset role;
+
+create temporary table dealer_rep_baseline as
+select sales_rep_id from public.dealers where id = '20000000-0000-4000-8000-000000000002';
+grant select on dealer_rep_baseline to authenticated;
+
+set local role authenticated;
+
+select lives_ok(
+  $$update public.dealers
+       set sales_rep_id = case
+         when sales_rep_id = '10000000-0000-4000-8000-000000000006'::uuid
+           then '10000000-0000-4000-8000-000000000007'::uuid
+         else '10000000-0000-4000-8000-000000000006'::uuid
+       end
+     where id = '20000000-0000-4000-8000-000000000002'$$,
+  'an admin can reassign a dealer to a different sales rep'
+);
+
+select isnt(
+  (select sales_rep_id::text from public.dealers where id = '20000000-0000-4000-8000-000000000002'),
+  (select sales_rep_id::text from dealer_rep_baseline),
+  'the admin reassignment really changed the assigned rep'
 );
 
 set local request.jwt.claim.sub = '10000000-0000-4000-8000-000000000005';
@@ -666,6 +736,104 @@ select is(
   (select count(*) from public.products where hsn_code is null or btrim(hsn_code) = ''),
   0::bigint,
   'every product carries a tax code'
+);
+
+-- 20260926100500 collapses two overlapping constraints per table into one. The
+-- count is the assertion, because a duplicate is not a harmless extra guard
+-- here: the pair on products disagreed, and '^[0-9]{4,8}$' in the newer one
+-- accepts 5- and 7-digit codes that are not valid HSN. Two constraints that
+-- have to be read together to work is one constraint too many.
+select is(
+  (select count(*)::int from pg_constraint con
+     join pg_class rel on rel.oid = con.conrelid
+     join pg_namespace ns on ns.oid = rel.relnamespace
+    where ns.nspname = 'public'
+      and rel.relname = 'products'
+      and con.conname ilike '%hsn%'),
+  1,
+  'products carries exactly one tax code constraint'
+);
+
+select is(
+  (select count(*)::int from pg_constraint con
+     join pg_class rel on rel.oid = con.conrelid
+     join pg_namespace ns on ns.oid = rel.relnamespace
+    where ns.nspname = 'public'
+      and rel.relname = 'invoice_lines'
+      and con.conname ilike '%hsn%'),
+  1,
+  'invoice_lines carries exactly one tax code constraint'
+);
+
+-- The rule that the looser regex would have lost. HSN is 4, 6 or 8 digits, so 5
+-- and 7 must both be refused, and a blank must be refused even though it is not
+-- null. The original code is captured so the product is put back exactly as the
+-- seed left it, rather than relying on the suite's final rollback to hide the
+-- damage.
+reset role;
+
+create temporary table hsn_probe as
+select id, hsn_code from public.products order by id limit 1;
+
+select throws_ok(
+  $$update public.products set hsn_code = '12345'
+     where id = (select id from hsn_probe)$$,
+  '23514',
+  null,
+  'a five digit tax code is refused'
+);
+
+select throws_ok(
+  $$update public.products set hsn_code = '1234567'
+     where id = (select id from hsn_probe)$$,
+  '23514',
+  null,
+  'a seven digit tax code is refused'
+);
+
+select throws_ok(
+  $$update public.products set hsn_code = '   '
+     where id = (select id from hsn_probe)$$,
+  '23514',
+  null,
+  'a whitespace tax code is refused'
+);
+
+select throws_ok(
+  $$update public.products set hsn_code = null
+     where id = (select id from hsn_probe)$$,
+  '23514',
+  null,
+  'a missing tax code is refused'
+);
+
+select lives_ok(
+  $$update public.products set hsn_code = '1234'
+     where id = (select id from hsn_probe)$$,
+  'a four digit tax code is accepted'
+);
+
+select lives_ok(
+  $$update public.products set hsn_code = '123456'
+     where id = (select id from hsn_probe)$$,
+  'a six digit tax code is accepted'
+);
+
+select lives_ok(
+  $$update public.products set hsn_code = '12345678'
+     where id = (select id from hsn_probe)$$,
+  'an eight digit tax code is accepted'
+);
+
+update public.products p
+   set hsn_code = h.hsn_code
+  from hsn_probe h
+ where p.id = h.id;
+
+select is(
+  (select p.hsn_code from public.products p join hsn_probe h on p.id = h.id),
+  (select hsn_code from hsn_probe),
+  'the product tax code is restored to its seeded value'
 );
 
 -- Every historical invoice has to have been backfilled, not just new ones.
@@ -1172,6 +1340,12 @@ select throws_ok(
 
 set local request.jwt.claim.sub = '6a251aaf-5609-4b83-a04c-282929b6197b';
 
+-- Refresh rather than defer to the row captured at the top of the suite: section A
+-- certified a run of this same product, so that snapshot no longer describes the
+-- stock level the two receipts below are added to, and 'on conflict do nothing'
+-- would have kept comparing against a level 1200 units stale.
+delete from compliance_baseline where product_id = '30000000-0000-4000-8000-000000000001';
+
 insert into compliance_baseline (product_id, qty)
 values ('30000000-0000-4000-8000-000000000001',
         (select current_quantity from public.stock_levels
@@ -1504,6 +1678,372 @@ select throws_ok(
   'P0001',
   'Receipt quantity must be positive',
   'a batch receipt must be for a positive quantity'
+);
+
+-- ===========================================================================
+-- F. Direct client write paths, and the escalations they must not open
+-- ===========================================================================
+--
+-- 20260926100600 exists because a policy is a row filter and not a permission.
+-- authenticated held SELECT on dealers while two UPDATE policies sat on it, so
+-- Postgres refused every browser write before row level security was even
+-- consulted, and the finance credit override and dealer self-service contact
+-- edit had never run as a signed-in user. The stage11 section E tests passed
+-- anyway, because they reset to the owner role, and the owner bypasses both
+-- grants and policies.
+--
+-- So these assertions are the ones that would have caught it: they run as
+-- authenticated, and they check the privilege directly rather than trusting a
+-- passing update to imply one.
+--
+-- The fixed identities used below:
+--   admin            10000000-...-0001
+--   sales_rep Ravi   10000000-...-0005
+--   finance          22145f21-...
+--   inventory mgr    6a251aaf-...
+--   production mgr   bddaf4a6-...
+--   qc_staff         7c1f0a52-...
+--   dealer (Coastal) 4637f04f-...
+
+-- --- the grants exist -----------------------------------------------------
+
+select ok(
+  has_table_privilege('authenticated', 'public.dealers'::regclass, 'UPDATE'),
+  'authenticated can update dealers, so the two dealers update policies are reachable'
+);
+
+select ok(
+  has_column_privilege('authenticated', 'public.users'::regclass, 'full_name', 'UPDATE'),
+  'a user can update their own full name'
+);
+
+select ok(
+  has_column_privilege('authenticated', 'public.products'::regclass, 'low_stock_threshold', 'UPDATE'),
+  'an inventory manager can update a replenishment threshold'
+);
+
+select ok(
+  has_column_privilege('authenticated', 'public.production_runs'::regclass, 'qc_status', 'UPDATE'),
+  'QC staff can update a QC verdict, so the browser QC action is reachable'
+);
+
+-- --- and the columns that would be escalations are not granted ------------
+
+-- users_update_self is a row filter meaning "my own row". Given the whole table,
+-- that is a role promotion button.
+select ok(
+  not has_column_privilege('authenticated', 'public.users'::regclass, 'role', 'UPDATE'),
+  'a user cannot update their own role'
+);
+
+select ok(
+  not has_column_privilege('authenticated', 'public.users'::regclass, 'is_active', 'UPDATE'),
+  'a user cannot reactivate their own account'
+);
+
+-- products_update_threshold is a row filter meaning "I am an inventory manager".
+-- Given the whole table, that is a repricing permission.
+select ok(
+  not has_column_privilege('authenticated', 'public.products'::regclass, 'price', 'UPDATE'),
+  'an inventory manager cannot reprice a product'
+);
+
+select ok(
+  not has_column_privilege('authenticated', 'public.products'::regclass, 'is_sellable', 'UPDATE'),
+  'an inventory manager cannot change whether a product is sellable'
+);
+
+select ok(
+  not has_column_privilege('authenticated', 'public.production_runs'::regclass, 'quantity_produced', 'UPDATE'),
+  'a production manager cannot rewrite a recorded production quantity'
+);
+
+-- --- dealer self-service: the feature that was dead -----------------------
+
+reset role;
+
+create temporary table write_probe as
+select
+  (select dealer_id from public.users where role = 'dealer' order by id limit 1) as own_dealer,
+  (select id from public.dealers
+    where id <> (select dealer_id from public.users where role = 'dealer' order by id limit 1)
+    order by id limit 1) as other_dealer,
+  (select credit_limit from public.dealers
+    where id = (select dealer_id from public.users where role = 'dealer' order by id limit 1)) as own_credit_limit;
+grant select on write_probe to authenticated;
+
+set local role authenticated;
+-- SET takes a literal, not a subquery, so the signed-in identity has to be
+-- written out. It is the seeded Coastal dealer, 4637f04f-aed6-44bc-82d8-774991079d1d.
+set local request.jwt.claim.sub = '4637f04f-aed6-44bc-82d8-774991079d1d';
+
+-- Accepting side. Without the grant in 20260926100600 this raised 42501, which
+-- is why the dealer contact form could never have saved.
+select lives_ok(
+  $$update public.dealers set phone = phone where id = (select own_dealer from write_probe)$$,
+  'a dealer can save their own contact details'
+);
+
+-- The escalation that granting dealers UPDATE would have opened. The guard from
+-- 20260926100300 did not cover sales_rep_id at all until 20260926100600.
+select throws_ok(
+  $$update public.dealers set sales_rep_id = (select sales_rep_id from public.dealers
+       where id = (select other_dealer from write_probe))
+     where id = (select own_dealer from write_probe)$$,
+  'P0001',
+  'Only an admin can reassign a dealer to a different sales rep',
+  'a dealer cannot reassign their own account to a different sales rep'
+);
+
+select throws_ok(
+  $$update public.dealers set credit_limit_override = 999999
+     where id = (select own_dealer from write_probe)$$,
+  'P0001',
+  'Only admin or finance can change a credit limit, account status or sales region',
+  'a dealer cannot raise their own credit limit override'
+);
+
+select throws_ok(
+  $$update public.dealers set region = 'West'
+     where id = (select own_dealer from write_probe)$$,
+  'P0001',
+  'Only admin or finance can change a credit limit, account status or sales region',
+  'a dealer cannot move their own account to another region'
+);
+
+-- Row scope, which is the policy rather than the guard. A filtered row is not an
+-- error, it is zero rows, so this is counted rather than thrown. The data
+-- modifying CTE has to be the top level of the statement; inside the is()
+-- argument Postgres refuses it outright.
+with blocked as (
+  update public.dealers set phone = '0000000000'
+   where id = (select other_dealer from write_probe)
+  returning 1
+)
+select is(
+  (select count(*)::int from blocked),
+  0,
+  'a dealer cannot write to another dealer''s row'
+);
+
+-- --- finance: the override path that was dead ------------------------------
+
+set local request.jwt.claim.sub = '22145f21-ebba-4e23-8bc5-b9650307a4ea';
+
+select lives_ok(
+  $$update public.dealers
+       set credit_limit_override = (select own_credit_limit from write_probe)
+     where id = (select own_dealer from write_probe)$$,
+  'finance can set a dealer credit limit override'
+);
+
+select lives_ok(
+  $$update public.dealers set region = region where id = (select own_dealer from write_probe)$$,
+  'finance can set a dealer region'
+);
+
+select is(
+  (select credit_limit_override from public.dealers where id = (select own_dealer from write_probe)),
+  (select own_credit_limit from write_probe),
+  'the override finance set is the value stored'
+);
+
+-- --- a sales rep, who is neither a dealer nor finance ----------------------
+--
+-- A sales rep matches neither dealers update policy, so the row is filtered out
+-- before the guard trigger is ever consulted. That means there is no exception to
+-- catch here, and asserting one would be asserting the wrong mechanism: the guard
+-- is not what stops them, the row scope is. Both writes are therefore counted.
+
+set local request.jwt.claim.sub = '10000000-0000-4000-8000-000000000005';
+
+with blocked as (
+  update public.dealers set status = 'suspended'
+   where id = (select own_dealer from write_probe)
+  returning 1
+)
+select is(
+  (select count(*)::int from blocked),
+  0,
+  'a sales rep cannot suspend a dealer'
+);
+
+with blocked as (
+  update public.dealers set phone = '1111111111'
+   where id = (select own_dealer from write_probe)
+  returning 1
+)
+select is(
+  (select count(*)::int from blocked),
+  0,
+  'a sales rep has no write access to a dealer row at all'
+);
+
+select is(
+  (select status::text from public.dealers where id = (select own_dealer from write_probe))
+  is distinct from 'suspended',
+  true,
+  'the dealer status is unchanged after the refused attempt'
+);
+
+-- --- inventory manager: threshold yes, catalogue no ------------------------
+
+set local request.jwt.claim.sub = '6a251aaf-5609-4b83-a04c-282929b6197b';
+
+select lives_ok(
+  $$update public.products set low_stock_threshold = low_stock_threshold
+     where id = (select product_id from public.stock_levels order by product_id limit 1)$$,
+  'an inventory manager can save a replenishment threshold'
+);
+
+select throws_ok(
+  $$update public.products set price = 1 where id = (select product_id from public.stock_levels order by product_id limit 1)$$,
+  '42501',
+  null,
+  'an inventory manager cannot change a product price'
+);
+
+-- --- self-service profile, and the role column that is not theirs ---------
+
+set local request.jwt.claim.sub = '10000000-0000-4000-8000-000000000005';
+
+select lives_ok(
+  $$update public.users set full_name = full_name where id = auth.uid()$$,
+  'a user can save their own name'
+);
+
+select throws_ok(
+  $$update public.users set role = 'admin' where id = auth.uid()$$,
+  '42501',
+  null,
+  'a user cannot promote themselves to admin'
+);
+
+select throws_ok(
+  $$update public.users set is_active = false where id = auth.uid()$$,
+  '42501',
+  null,
+  'a user cannot deactivate their own account'
+);
+
+-- --- QC: the component that could never have worked ------------------------
+
+reset role;
+
+-- A precondition, and the reason it is here: an UPDATE whose WHERE clause matches
+-- nothing raises no error and reports no failure, so every lives_ok and throws_ok
+-- below would quietly pass against an empty set if no pending run existed.
+--
+-- The run is created here rather than borrowed, for the same reason as in section
+-- A: a suite that depends on a pending run happening to be lying around is a suite
+-- that consumes seed state and fails the second time it is run. Nothing is cleaned
+-- up afterwards because the whole suite runs inside the transaction that the final
+-- rollback discards.
+reset role;
+
+do $$
+declare
+  v_late uuid;
+begin
+  insert into public.production_runs (
+    product_id, quantity_produced, shift, run_date, qc_status, created_by
+  )
+  values (
+    '30000000-0000-4000-8000-000000000004', 1200, 'night',
+    current_date, 'pending', 'bddaf4a6-c4c0-4637-8369-c3cb7338098d'
+  )
+  returning id into v_late;
+
+  update compliance_ids set second_run_id = v_late;
+end
+$$;
+
+select ok(
+  (select count(*) > 0 from public.production_runs where qc_status = 'pending'),
+  'a pending production run exists to finalize'
+);
+
+-- The column privilege for quantity_produced is asserted above, as a privilege
+-- check, because the behavioural version of it cannot be written here: this
+-- section has to read the pending run as the owner, and the owner is not subject
+-- to the column grant, so the update would simply succeed.
+
+set local role authenticated;
+set local request.jwt.claim.sub = '7c1f0a52-9d34-4b6e-8a17-52e0c4b8d901';
+
+select lives_ok(
+  $$update public.production_runs set qc_notes = qc_notes
+     where id = (select id from public.production_runs where qc_status = 'pending' order by id limit 1)$$,
+  'QC staff can record notes against a pending run'
+);
+
+-- The trigger rule, now reachable from the browser for the first time.
+select throws_ok(
+  $$update public.production_runs set qc_status = 'failed'
+     where id = (select id from public.production_runs where qc_status = 'pending' order by id limit 1)$$,
+  'P0001',
+  'Failed QC requires notes',
+  'QC staff cannot fail a run without notes'
+);
+
+-- --- no write policy is left stranded without a grant ----------------------
+--
+-- The structural check, so this class of bug cannot come back through a new
+-- table. The two SECURITY DEFINER only tables are excluded by name, because for
+-- those the policies are inert by design rather than dead by accident.
+--
+-- has_any_column_privilege rather than has_table_privilege, and the difference is
+-- the whole point: a column grant makes a policy reachable without ever granting
+-- the table. Checking table privilege here would have called products,
+-- production_runs and users dead on the very migration that fixed them.
+--
+-- raw_materials is not excluded, and this is why: it grants INSERT and UPDATE to
+-- authenticated for the internal roles its ALL policy names, so its write path is
+-- real and its policy is not dead. The exclusion list is the exception list, so
+-- every name on it is a place a future migration has to look at on purpose.
+
+reset role;
+
+select is(
+  (select count(*)::int
+     from pg_policies p
+     join pg_class c on c.relname = p.tablename
+     join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where p.schemaname = 'public'
+      and p.cmd = 'UPDATE'
+      and p.roles::text like '%authenticated%'
+      and p.tablename not in ('purchase_orders', 'purchase_order_lines')
+      and not has_any_column_privilege('authenticated', c.oid, 'UPDATE')),
+  0,
+  'every browser-writable update policy has a grant that makes it reachable'
+);
+
+-- The two exclusions are load-bearing rather than convenient. If a future
+-- migration gives either table a browser write path, this fails and the name has
+-- to come off the list deliberately.
+select is(
+  (select count(*)::int
+     from pg_policies p
+     join pg_class c on c.relname = p.tablename
+     join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where p.schemaname = 'public'
+      and p.roles::text like '%authenticated%'
+      and p.tablename in ('purchase_orders', 'purchase_order_lines')
+      and has_any_column_privilege('authenticated', c.oid, 'UPDATE')),
+  0,
+  'the SECURITY DEFINER only tables still have no browser write grant'
+);
+
+-- And raw_materials stays out of that list for the opposite reason, asserted so
+-- the reason is recorded rather than remembered.
+select ok(
+  has_any_column_privilege('authenticated', 'public.raw_materials'::regclass, 'UPDATE'),
+  'raw_materials is genuinely browser-writable, so it is not an inert policy'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.raw_materials'::regclass, 'DELETE'),
+  'raw_materials rows still cannot be deleted from the browser'
 );
 
 select * from finish();

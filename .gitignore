@@ -11,3 +11,6 @@ node_modules/
 # playwright smoke test output
 .smoke/
 .smoke-lifecycle/
+
+# logical database backups
+backups/

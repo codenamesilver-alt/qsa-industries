@@ -28,6 +28,8 @@ const INTERNAL = [
   "/internal",
   "/internal/production",
   "/internal/inventory",
+  "/internal/purchasing",
+  "/internal/quality",
   "/internal/orders",
   "/internal/finance",
 ];
@@ -50,37 +52,70 @@ const ACCOUNTS = [
     role: "production_manager",
     portal: "internal",
     email: "operations.production@qsa-demo.in",
-    routes: ["/internal", "/internal/production", "/internal/inventory"],
+    routes: ["/internal", "/internal/production", "/internal/inventory", "/internal/purchasing", "/internal/quality"],
     denied: ["/internal/orders", "/internal/finance"],
   },
   {
     role: "inventory_manager",
     portal: "internal",
     email: "operations.inventory@qsa-demo.in",
-    routes: ["/internal", "/internal/inventory"],
-    denied: ["/internal/production", "/internal/orders", "/internal/finance"],
+    routes: ["/internal", "/internal/inventory", "/internal/purchasing"],
+    denied: ["/internal/production", "/internal/quality", "/internal/orders", "/internal/finance"],
+  },
+  // qc_staff is a quality-only role: it may see runs to judge and the materials
+  // they consume, but nothing about production entry, stock, purchasing, orders,
+  // or finance. This row is the test that keeps the role narrow.
+  {
+    role: "qc_staff",
+    portal: "internal",
+    email: "qc@qsa-demo.in",
+    routes: ["/internal", "/internal/quality"],
+    denied: [
+      "/internal/production",
+      "/internal/inventory",
+      "/internal/purchasing",
+      "/internal/orders",
+      "/internal/finance",
+      "/sales",
+      "/dealer",
+    ],
   },
   {
     role: "logistics",
     portal: "internal",
     email: "logistics@qsa-demo.in",
     routes: ["/internal", "/internal/orders"],
-    denied: ["/internal/production", "/internal/inventory", "/internal/finance"],
+    denied: [
+      "/internal/production",
+      "/internal/inventory",
+      "/internal/purchasing",
+      "/internal/quality",
+      "/internal/finance",
+    ],
   },
   {
     role: "finance",
     portal: "internal",
     email: "finance@qsa-demo.in",
-    routes: ["/internal", "/internal/finance"],
-    denied: ["/internal/production", "/internal/inventory", "/internal/orders"],
+    routes: ["/internal", "/internal/purchasing", "/internal/finance"],
+    denied: [
+      "/internal/production",
+      "/internal/inventory",
+      "/internal/quality",
+      "/internal/orders",
+    ],
   },
-  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/dealer"] },
+  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/dealer"], content: { "/sales/orders": [/Proxy order/] } },
   {
     role: "sales_manager",
     portal: "sales",
     email: "meera.nair@qsa-demo.in",
     routes: SALES,
     denied: ["/internal", "/dealer"],
+    // create_dealer_order accepts a dealer only for the dealer itself, a mapped
+    // sales rep, or an admin. A manager reaching the proxy form would only ever
+    // get an error back, so the panel must not be offered to them at all.
+    absent: { "/sales/orders": [/Proxy order/] },
   },
   {
     role: "sales_director",
@@ -88,6 +123,7 @@ const ACCOUNTS = [
     email: "nadia.kapoor@qsa-demo.in",
     routes: SALES,
     denied: ["/internal", "/dealer"],
+    absent: { "/sales/orders": [/Proxy order/] },
   },
   {
     role: "dealer",
@@ -122,6 +158,8 @@ const CONTENT = {
   "/internal": [/Stock positions/],
   "/internal/production": [/QSA-BROILER-0\d/],
   "/internal/inventory": [/QSA-LAYER-01|QSA-BROILER-0\d/],
+  "/internal/purchasing": [/Raise purchase order/, /Purchase order register/],
+  "/internal/quality": [/Record QC verdict/, /Quality queue/],
   "/internal/orders": [/Mark dispatched|Dispatch queue/],
   "/internal/finance": [/QSA-2026-\d{4}/],
   "/sales": [/Orders tracked/],
@@ -301,6 +339,18 @@ for (const account of ACCOUNTS) {
     for (const re of CONTENT[route] ?? []) {
       if (!re.test(text)) {
         flag(account.role, "content", `${route} rendered no data matching ${re} (${text.length} chars)`);
+      }
+    }
+    // Extra markers that only hold for this account, e.g. a panel that must be
+    // present for one role and absent for another.
+    for (const re of account.content?.[route] ?? []) {
+      if (!re.test(text)) {
+        flag(account.role, "content", `${route} rendered no data matching ${re} (${text.length} chars)`);
+      }
+    }
+    for (const re of account.absent?.[route] ?? []) {
+      if (re.test(text)) {
+        flag(account.role, "content", `${route} offered ${account.role} a panel matching ${re} that it cannot use`);
       }
     }
 

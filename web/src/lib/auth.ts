@@ -1,10 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
 
+// Mirrors public.user_role in the database. qc_staff was added there in
+// 20260926093100 and was missing from this list, so a QC user authenticated
+// successfully and then had no role that matched anywhere in the app.
 export const userRoles = [
   "admin",
   "production_manager",
   "inventory_manager",
+  "qc_staff",
   "sales_rep",
   "sales_manager",
   "sales_director",

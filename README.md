@@ -14,7 +14,10 @@ Supabase, with all schema and seed data expressed as migrations in
 | `web/` | Next.js application (App Router) |
 | `supabase/migrations/` | Schema, functions, RLS, and dev seed data, in order |
 | `supabase/tests/` | pgTAP suites, one file per stage |
-| `scripts/` | Database migration, test, audit and cleanup tooling, plus the browser tests |
+| `scripts/` | Database migration, test, audit, backup and cleanup tooling, plus the browser tests |
+| `deployment/` | PM2 process definition, Nginx config, and the deploy script |
+| `docs/` | Build plan, Tally export mapping, and design notes |
+| `backups/` | Logical database dumps (gitignored) |
 | `.env` | Local database credentials (gitignored) |
 | `.smoke/`, `.smoke-lifecycle/` | Browser-test screenshots (gitignored) |
 
@@ -41,9 +44,12 @@ same server, which the transaction pooler does not allow.
 npm run db:migrate           # apply pending migrations, record them
 npm run db:test              # run the pgTAP suites against the target database
 npm run db:verify-fresh      # prove a from-scratch install matches the repository
+npm run db:backup            # write a logical dump of every public table
+npm run db:restore-check     # prove the newest backup actually restores
 npm run db:history-backfill  # repair incomplete migration-history rows
 npm run db:migration-redo    # re-apply one already-applied migration from its file
 npm run db:audit             # read-only snapshot of dealer exposure, stock and counts
+npm run db:mutation-hsn      # prove an HSN code change is rejected or accepted correctly
 npm test                     # db:test, then db:verify-fresh
 ```
 
@@ -211,7 +217,7 @@ SMOKE_PASSWORD=<demo password> npm run ui:smoke
 ```
 
 `scripts/ui-smoke.mjs` drives a real Chromium through all three portals. For each
-of the nine roles it signs in through the actual login form, walks the routes that
+of the ten roles it signs in through the actual login form, walks the routes that
 role is allowed to see, and asserts the page rendered real data, then checks the
 routes that role must be refused. It fails on console errors, uncaught page
 errors, failed requests, and any page that comes back thin or showing an error
@@ -231,7 +237,7 @@ Screenshots of every visited page land in `.smoke/` (gitignored) for eyeballing
 when something fails. `SMOKE_BASE_URL` and `SMOKE_SHOTS` override the defaults.
 
 The demo password comes from `SMOKE_PASSWORD` so no credential is committed.
-Run it against a local build, not production: it signs in nine times and mutates
+Run it against a local build, not production: it signs in ten times and mutates
 nothing, but it is still a full authenticated crawl.
 
 ## Order lifecycle test
@@ -288,6 +294,119 @@ Use `npm run db:audit` afterwards to see what a run left behind.
 The browser suites are deliberately not in CI. `ui:smoke` and `ui:lifecycle`
 drive a running Next.js server against a real Supabase project, so they need live
 credentials and mutate data. Run them locally.
+
+## Backups and restores
+
+```bash
+npm run db:backup                # write backups/qsa-<timestamp>.sql
+npm run db:restore-check         # rebuild the newest backup and prove it works
+```
+
+`db:backup` writes a logical dump of every public table to `backups/`, named
+`qsa-<UTC timestamp>.sql`, and prunes on every run: the newest 20 are kept, and
+anything older than 14 days is dropped. The dump is **data only** — the schema
+comes from `supabase/migrations`, so a restore replays the migrations and loads
+the dump on top. That keeps the file small and diffable, and it means a dump is
+only compatible with the migration set that produced it, so keep backups and
+commits together.
+
+Values are rendered by PostgreSQL itself, not by the script, so escaping is the
+server's job. The dump ends with `setval` for every sequence, which is the part
+that is easy to forget and expensive to discover later: without it, a restored
+database hands out invoice numbers that already exist.
+
+`db:restore-check` is the part that matters. A backup nobody has restored is a
+hypothesis. It creates a throwaway database, replays all 38 migrations, truncates
+the seeded rows, loads the dump in one transaction with
+`session_replication_role = replica`, then checks 31 things and drops the
+database:
+
+- every table's row count against the manifest the dump recorded **when it was
+  taken**, not against the live database, so a concurrent write cannot cause a
+  false failure;
+- every foreign key in the public schema, 42 of them, counted as actual orphan
+  rows. Enforcement is switched off during the load because `orders` ↔ `invoices`
+  and `users` ↔ `dealers` reference each other and neither constraint is
+  deferrable, so this check is what proves the load was legitimate rather than
+  assuming it;
+- the stock ledger reconciliation, the invoice sequence sitting past the highest
+  invoice issued, no duplicated invoice numbers, every invoice still having its
+  lines;
+- all six pgTAP suites, 222 assertions, against the restored copy.
+
+Options:
+
+```bash
+npm run db:restore-check -- --file qsa-<timestamp>.sql   # check a specific backup
+npm run db:restore-check -- --keep                       # leave the scratch database
+npm run db:restore-check -- --restore-to qsadb_restored  # restore for real, and keep it
+```
+
+`--restore-to` is the same work with a different ending: it builds a named
+database, verifies it with all 31 checks, and leaves it in place. It refuses to
+replace an existing database without `--force`, and it does not report success
+if any check failed. This is the incident-recovery path — see
+[`deployment/README.md`](deployment/README.md#rollback).
+
+Both scripts need permission to create databases, which the Supabase `postgres`
+role has. `pg_dump` is not required, but on a server that has it, also take a
+self-contained dump so a restore does not depend on the migration files.
+
+## Deployment
+
+[`deployment/`](deployment/) holds the PM2 process definition, the Nginx site
+config, and `deploy.sh`. Full setup, rollback, backup scheduling, and monitoring
+instructions are in [`deployment/README.md`](deployment/README.md).
+
+```bash
+./deployment/deploy.sh    # backup, prove it, pull, migrate, build, reload, health check
+```
+
+The script takes a backup and proves it restores *before* running any migration,
+because a backup taken after a migration is worthless. It migrates before it
+builds, which is the safe direction here: every migration in this repository is
+additive, so old code tolerates the new schema but new code would not tolerate
+the old one.
+
+Nothing in `deployment/` has been run against a real server yet. No VPS has been
+provisioned and no domain points at this app, so treat the first deploy as a
+rehearsal.
+
+## Accounts
+
+There is no signup. Accounts are created out of band by an administrator:
+
+```bash
+cd web
+npm run provision:user -- email full_name role [dealer_id]
+```
+
+It needs `PROVISION_USER_PASSWORD` and a service-role key in the environment.
+It rejects an unknown role, a dealer account with no `dealer_id`, and a
+`dealer_id` that does not exist, and it deletes the auth user again if the
+profile write fails.
+
+The seed data creates 14 demo accounts across the ten roles, sharing one
+password. `scripts/ui-smoke.mjs` signs in as one account per role — the `ACCOUNTS`
+list in that file is the authoritative list, and it is what the allowed/denied
+route assertions are written against. See the seed migration for all 14
+addresses. Replace them with real per-user credentials before production; see the
+next section.
+
+## Tally export
+
+The database side is built: `public.tally_invoice_lines` and
+`public.tally_payment_lines` produce export-shaped rows, and
+`public.record_tally_export` writes an audit record of every export. The CSV
+exporter exists at `GET /api/tally/export` — see
+[`web/src/app/api/tally/export/route.ts`](web/src/app/api/tally/export/route.ts) —
+restricted to finance and admin, and it records every file it writes. No file
+has ever been loaded into Tally.
+
+The Tally-side mapping — voucher types, ledger names, GST split, voucher
+numbering, and the XML shape — is blocked on knowing which Tally version and
+import format to target. [`docs/TALLY_EXPORT.md`](docs/TALLY_EXPORT.md) records
+the column-by-column mapping and lists the seven open decisions.
 
 ## Before production
 

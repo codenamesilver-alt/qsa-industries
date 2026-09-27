@@ -12,9 +12,9 @@ export type PortalConfig = {
 export const portalConfig: Record<Portal, PortalConfig> = {
   internal: {
     title: "Internal operations",
-    description: "Production, inventory, logistics, finance, and administration access.",
+    description: "Production, quality, inventory, logistics, finance, and administration access.",
     destination: "/internal",
-    allowedRoles: ["admin", "production_manager", "inventory_manager", "logistics", "finance"],
+    allowedRoles: ["admin", "production_manager", "inventory_manager", "qc_staff", "logistics", "finance"],
   },
   sales: {
     title: "Sales management",

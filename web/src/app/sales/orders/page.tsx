@@ -1,15 +1,34 @@
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
 import { OrderActions } from "../../../components/order-actions";
 import { PortalShell } from "../../../components/portal-shell";
+import { ProxyOrderForm } from "../../../components/proxy-order-form";
 import { requireProfile } from "../../../lib/auth";
-import { getDealerExposure, getOrders } from "../../../lib/data";
+import { getActiveDealers, getDealerCatalog, getDealerExposure, getMappedDealers, getOrders } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
 
 const salesRoles = ["admin", "sales_rep", "sales_manager", "sales_director"] as const;
 
+// create_dealer_order only lets a sales_rep or an admin raise an order on someone
+// else's behalf. A sales_manager or sales_director has no such power, so the proxy
+// panel is not rendered for them at all.
+const proxyRoles = ["admin", "sales_rep"] as const;
+
 export default async function SalesOrdersPage() {
   const profile = await requireProfile(salesRoles);
-  const [orders, exposure] = await Promise.all([getOrders(), getDealerExposure()]);
+  const canProxy = (proxyRoles as readonly string[]).includes(profile.role);
+  const [orders, exposure, catalog, proxyDealers] = await Promise.all([
+    getOrders(),
+    getDealerExposure(),
+    canProxy ? getDealerCatalog() : Promise.resolve([]),
+    // A rep may only name a dealer mapped to them; an admin may name any active
+    // dealer. The RPC enforces both again, so the two lists differ only in what
+    // the picker can offer.
+    !canProxy
+      ? Promise.resolve([])
+      : profile.role === "admin"
+        ? getActiveDealers()
+        : getMappedDealers(),
+  ]);
   const exposureByDealer = new Map(exposure.map((row) => [row.dealer_id, row]));
   const pending = orders.filter((order) => order.status === "pending");
   const directorQueue = orders.filter((order) => order.status === "pending_director_approval");
@@ -27,6 +46,20 @@ export default async function SalesOrdersPage() {
         <MetricCard detail="Visible escalated orders" label="Director queue" value={String(directorQueue.length).padStart(2, "0")} />
         <MetricCard detail="Ready for dispatch" label="Approved" value={String(approved.length).padStart(2, "0")} />
       </section>
+      {canProxy ? (
+        <div className="mt-6">
+          <DataPanel
+            description={
+              profile.role === "sales_rep"
+                ? "Raise an order for a dealer mapped to your account. The database refuses any dealer that is not mapped to you, whatever this form sends."
+                : "Raise an order on behalf of any active dealer, for data repair taken over the phone."
+            }
+            title="Proxy order"
+          >
+            <ProxyOrderForm catalog={catalog} dealers={proxyDealers} />
+          </DataPanel>
+        </div>
+      ) : null}
       <div className="mt-6 space-y-4">
         {orders.length ? (
           orders.map((order) => {

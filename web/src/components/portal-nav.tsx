@@ -5,19 +5,31 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
   admin: [
     { href: "/internal", label: "Overview" },
     { href: "/internal/inventory", label: "Inventory" },
+    { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/production", label: "Production" },
-     { href: "/internal/finance", label: "Finance" },
-     { href: "/internal/orders", label: "Dispatch queue" },
-     { href: "/sales/orders", label: "Sales orders" },
+    { href: "/internal/quality", label: "Quality" },
+    { href: "/internal/finance", label: "Finance" },
+    { href: "/internal/orders", label: "Dispatch queue" },
+    { href: "/sales/orders", label: "Sales orders" },
   ],
   production_manager: [
     { href: "/internal", label: "Overview" },
     { href: "/internal/inventory", label: "Inventory" },
+    { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/production", label: "Production" },
+    { href: "/internal/quality", label: "Quality" },
   ],
   inventory_manager: [
     { href: "/internal", label: "Overview" },
     { href: "/internal/inventory", label: "Inventory" },
+    { href: "/internal/purchasing", label: "Purchasing" },
+  ],
+  // qc_staff exists in the database role enum and in the SELECT policy on
+  // production_runs, but had no route and no nav entry until now, so a QC user
+  // could sign in and land nowhere they could act.
+  qc_staff: [
+    { href: "/internal", label: "Overview" },
+    { href: "/internal/quality", label: "Quality" },
   ],
   logistics: [
     { href: "/internal", label: "Overview" },
@@ -25,6 +37,7 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
   ],
   finance: [
     { href: "/internal", label: "Overview" },
+    { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/finance", label: "Finance" },
   ],
   sales_rep: [
