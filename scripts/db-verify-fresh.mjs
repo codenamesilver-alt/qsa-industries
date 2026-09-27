@@ -56,7 +56,8 @@ const EXPECTED = {
   firstInvoice: "QSA-2026-000001",
   lastInvoice: "QSA-2026-000012",
   invoiceSequence: 12,
-  users: 13,
+  // 14 as of 20260926093200, which added the qc_staff demo account.
+  users: 14,
   tallyExports: 3,
   greenValleyHeadroom: 57150,
   // QSA-LAYER-01 has to sit in this band: the dispatch suites place a 1000 unit
@@ -173,6 +174,118 @@ const CHECKS = [
   [
     "no invoice beyond the seeded range",
     "select count(*)::int v from invoices where invoice_number > 'QSA-2026-000012'",
+    0,
+  ],
+
+  // -------------------------------------------------------------------------
+  // Schema presence checks for the 20260926 migration block. These exist so a
+  // migration that silently fails to create something is caught here rather
+  // than by a screen that cannot load three weeks later.
+  // -------------------------------------------------------------------------
+  [
+    "every product carries a tax code",
+    "select count(*)::int v from products where hsn_code is null or btrim(hsn_code) = ''",
+    0,
+  ],
+  [
+    "every invoice has at least one line",
+    `select count(*)::int v from invoices i
+       where not exists (select 1 from invoice_lines il where il.invoice_id = i.id)`,
+    0,
+  ],
+  [
+    "every invoice line carries a tax code",
+    "select count(*)::int v from invoice_lines where hsn_code is null or btrim(hsn_code) = ''",
+    0,
+  ],
+  [
+    "invoice headers reconcile with their lines",
+    `select count(*)::int v from invoices i
+       where abs(i.taxable_amount - coalesce((select sum(l.taxable_amount) from invoice_lines l
+                                              where l.invoice_id = i.id), 0)) > 0.01
+          or abs(i.total_amount - coalesce((select sum(l.line_total) from invoice_lines l
+                                            where l.invoice_id = i.id), 0)) > 0.01
+          or abs(i.gst_amount - coalesce((select sum(l.cgst_amount + l.sgst_amount + l.igst_amount)
+                                            from invoice_lines l where l.invoice_id = i.id), 0)) > 0.01`,
+    0,
+  ],
+  [
+    "qc_staff exists in the user role enum",
+    `select count(*)::int v from pg_enum e
+       join pg_type t on t.oid = e.enumtypid
+       join pg_namespace n on n.oid = t.typnamespace
+      where n.nspname = 'public' and t.typname = 'user_role' and e.enumlabel = 'qc_staff'`,
+    1,
+  ],
+  [
+    "a qc_staff demo account exists",
+    "select count(*)::int v from users where role = 'qc_staff'",
+    1,
+  ],
+  [
+    "every seeded dealer has a region",
+    "select count(*)::int v from dealers where region is null or btrim(region) = ''",
+    0,
+  ],
+  [
+    "the region report exists",
+    "select count(*)::int v from information_schema.views where table_schema = 'public' and table_name = 'sales_by_region'",
+    1,
+  ],
+  [
+    "no dealer falls through to Unassigned",
+    "select count(*)::int v from sales_by_region where region = 'Unassigned'",
+    0,
+  ],
+  [
+    "ageing settings columns exist",
+    `select count(*)::int v from information_schema.columns
+       where table_schema = 'public' and table_name = 'finance_settings'
+         and column_name in ('ageing_grace_days', 'ageing_bucket_1_days',
+                             'ageing_bucket_2_days', 'ageing_bucket_3_days',
+                             'credit_counts_current_invoices')`,
+    5,
+  ],
+  [
+    "the invoice ageing view exists",
+    "select count(*)::int v from information_schema.views where table_schema = 'public' and table_name = 'dealer_invoice_ageing'",
+    1,
+  ],
+  [
+    "the expiry batch view exists",
+    "select count(*)::int v from information_schema.views where table_schema = 'public' and table_name = 'expiring_batches'",
+    1,
+  ],
+  [
+    "the dealer catalog exposes a sellable quantity",
+    `select count(*)::int v from information_schema.columns
+       where table_schema = 'public' and table_name = 'dealer_catalog'
+         and column_name = 'sellable_quantity'`,
+    1,
+  ],
+  [
+    "stock movements can reference a batch",
+    `select count(*)::int v from information_schema.columns
+       where table_schema = 'public' and table_name = 'stock_movements'
+         and column_name = 'batch_id'`,
+    1,
+  ],
+  [
+    "purchase orders start empty",
+    "select count(*)::int v from purchase_orders",
+    0,
+  ],
+  [
+    "batches start empty",
+    "select count(*)::int v from product_batches",
+    0,
+  ],
+  [
+    // Batch tracking must stay optional: on a fresh install nothing is batch
+    // tracked, so dispatch has to work against the product-level ledger alone.
+    "no product is batch tracked on a fresh install",
+    `select count(*)::int v from products p
+       where exists (select 1 from product_batches b where b.product_id = p.id)`,
     0,
   ],
 ];
