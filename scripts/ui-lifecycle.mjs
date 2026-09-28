@@ -260,156 +260,7 @@ let invoiceTotal = null;
     seen.drain();
     fail("dealer/catalog", `could not read a unit price from the ${SKU} row: ${rowText}`);
     await context.close();
-// ------------------- 10. a sales rep places a proxy order for a mapped dealer ---
-{
-  // The rep's dealer list is a convenience in the UI, not the authority:
-  // create_dealer_order re-checks that the rep is mapped to the dealer they
-  // name. So the browser test picks a dealer the rep is actually mapped to,
-  // rather than the first option, which is only mapped by luck of the sort order.
-  const mapped = await db.query(
-    `select d.id, d.name
-       from dealers d
-       join users u on u.id = d.sales_rep_id
-      where u.email = $1
-      order by d.name
-      limit 1`,
-    [ACCOUNTS.salesRep.email],
-  );
-  const target = mapped.rows[0];
-  check("sales/orders", Boolean(target), "the sales rep is not mapped to any dealer, so proxy ordering is untestable");
-
-  if (target) {
-    const before = await one(`select count(*)::int as n from public.orders`);
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
-    const { page, seen } = await login(context, "salesRep");
-    await visit(page, `${BASE}/sales/orders`);
-
-    const form = page.locator("main form").filter({ has: page.getByRole("button", { name: /submit proxy order/i }) });
-    if ((await form.count()) === 0) {
-      fail("sales/orders", "no proxy order form was rendered for a sales rep");
-    } else {
-      await form.getByLabel(/^dealer$/i).selectOption(target.id);
-
-      // Same SKU as the main order so available stock is known to be sufficient,
-      // but a much smaller quantity: this order is never approved, dispatched or
-      // paid, it exists only to prove the write path.
-      const row = form.locator("tr").filter({ hasText: SKU }).first();
-      if ((await row.count()) === 0) {
-        fail("sales/orders", `the proxy catalog did not offer ${SKU} to order`);
-      } else {
-        await row.getByLabel(/quantity/i).first().fill(String(PROXY_QTY));
-        await form.getByLabel(/requested delivery date/i).fill(businessDate());
-        await form.getByRole("button", { name: /submit proxy order/i }).click();
-        const placed = await form
-          .getByText(/order submitted/i)
-          .waitFor({ timeout: 30000 })
-          .then(() => true)
-          .catch(() => false);
-        step("proxy order", placed ? `placed for ${target.name} via the browser` : "no confirmation appeared");
-        if (!placed) await page.screenshot({ path: path.join(SHOTS, "FAILED-10-proxy.png"), fullPage: true });
-      }
-    }
-    seen.drain();
-    await context.close();
-
-    const created = await one(
-      `select o.id, o.status, o.dealer_id, o.created_by,
-              (select count(*)::int from public.order_items i where i.order_id = o.id) as lines
-         from public.orders o
-        where o.dealer_id = $1
-        order by o.created_at desc
-        limit 1`,
-      [target.id],
-    );
-    check("sales/orders", Boolean(created), `no order was created for ${target.name}`);
-    if (created) {
-      const owner = await one(`select email from public.users where id = $1`, [created.created_by]);
-      step("proxy order row", `status ${created.status}, created by ${owner ? owner.email : created.created_by}`);
-      eq("sales/orders", created.dealer_id, target.id, "the order is on the dealer the rep named");
-      same("sales/orders", owner?.email, ACCOUNTS.salesRep.email, "the order was placed by the sales rep account");
-      eq("sales/orders", created.lines, 1, "order line count");
-
-      // This order exists only to exercise the write path, and it is never
-      // approved, so it is removed rather than left behind as a pending order
-      // that would keep showing up in a manager's queue. The order the lifecycle
-      // is about is left alone above.
-      await db.query(`delete from public.orders where id = $1`, [created.id]);
-      const after = await one(`select count(*)::int as n from public.orders`);
-      eq("sales/orders", after.n, before.n, "the proxy order was cleaned up");
-    }
-  }
-}
-
-// ------------------- 11. finance edits a dealer's credit limit through the UI ---
-{
-  // Legacy Agro Supplies is the dealer with a zero limit, so raising and
-  // restoring it is a visible change rather than a rewrite of the same number.
-  const dealer = await one(
-    `select id, name, credit_limit::numeric as credit_limit
-       from dealers order by credit_limit asc, name limit 1`,
-  );
-  check("internal/finance", Boolean(dealer), "no dealer was available to edit");
-
-  if (dealer) {
-    const raised = Math.max(50000, Math.round(Number(dealer.credit_limit)) + 25000);
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
-    const { page, seen } = await login(context, "finance");
-    await visit(page, `${BASE}/internal/finance`);
-
-    // One form per dealer, each in a card headed by the dealer's name, so the
-    // right one is found by looking at the card rather than trusting an index.
-    const forms = page.locator("main form").filter({ has: page.getByRole("button", { name: /save dealer account/i }) });
-    const total = await forms.count();
-    let form = null;
-    for (let index = 0; index < total; index += 1) {
-      const card = await forms.nth(index).locator("xpath=../..").innerText();
-      if (card.includes(dealer.name)) {
-        form = forms.nth(index);
-        break;
-      }
-    }
-
-    if (!form) {
-      fail("internal/finance", `no dealer credit form was rendered for ${dealer.name}`);
-    } else {
-      // The direct-write grant is split by column, so a finance user must not be
-      // offered the sales rep picker: the database would refuse that column for
-      // this role, and offering it would be a form that cannot succeed.
-      eq("internal/finance", await form.getByLabel(/sales rep/i).count(), 0, "finance is not offered the admin-only rep picker");
-
-      await form.getByLabel(/base credit limit/i).fill(String(raised));
-      await form.getByRole("button", { name: /save dealer account/i }).click();
-      const saved = await form
-        .getByText(/dealer account updated/i)
-        .waitFor({ timeout: 30000 })
-        .then(() => true)
-        .catch(() => false);
-      step("dealer credit", saved ? `${dealer.name} limit set to ${raised} via the browser` : "no confirmation appeared");
-      if (!saved) await page.screenshot({ path: path.join(SHOTS, "FAILED-11-credit.png"), fullPage: true });
-
-      const written = await one(`select credit_limit::numeric as credit_limit from public.dealers where id = $1`, [dealer.id]);
-      eq("internal/finance", Number(written.credit_limit), raised, "credit limit as typed");
-
-      // Put it back, so a rerun starts from the same place and the seed is not
-      // quietly reshaped by running the tests.
-      await form.getByLabel(/base credit limit/i).fill(String(Number(dealer.credit_limit)));
-      await form.getByRole("button", { name: /save dealer account/i }).click();
-      const restored = await form
-        .getByText(/dealer account updated/i)
-        .waitFor({ timeout: 30000 })
-        .then(() => true)
-        .catch(() => false);
-      check("internal/finance", restored, "the credit limit could not be restored through the browser");
-      const back = await one(`select credit_limit::numeric as credit_limit from public.dealers where id = $1`, [dealer.id]);
-      eq("internal/finance", Number(back.credit_limit), Number(dealer.credit_limit), "credit limit restored");
-      step("dealer credit restore", `${dealer.name} limit back at ${Number(dealer.credit_limit)}`);
-    }
-    seen.drain();
-    await context.close();
-  }
-}
-
-await browser.close();
+    await browser.close();
     await db.end();
     process.exit(1);
   }
@@ -983,6 +834,383 @@ if (lines.rows.length !== 1) {
     step("batch row", `${batch.batch_code} quantity ${batch.quantity_received} expiry ${batch.expiry_date}`);
     eq("internal/inventory", Number(batch.quantity_received), 7, "received quantity as typed");
   }
+}
+
+// ------------------- 10. a sales rep places a proxy order for a mapped dealer ---
+{
+  // The rep's dealer list is a convenience in the UI, not the authority:
+  // create_dealer_order re-checks that the rep is mapped to the dealer they
+  // name. So the browser test picks a dealer the rep is actually mapped to,
+  // rather than the first option, which is only mapped by luck of the sort order.
+  const mapped = await db.query(
+    `select d.id, d.name
+       from dealers d
+       join users u on u.id = d.sales_rep_id
+      where u.email = $1
+      order by d.name
+      limit 1`,
+    [ACCOUNTS.salesRep.email],
+  );
+  const target = mapped.rows[0];
+  check("sales/orders", Boolean(target), "the sales rep is not mapped to any dealer, so proxy ordering is untestable");
+
+  if (target) {
+    const before = await one(`select count(*)::int as n from public.orders`);
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+    const { page, seen } = await login(context, "salesRep");
+    await visit(page, `${BASE}/sales/orders`);
+
+    const form = page.locator("main form").filter({ has: page.getByRole("button", { name: /submit proxy order/i }) });
+    if ((await form.count()) === 0) {
+      fail("sales/orders", "no proxy order form was rendered for a sales rep");
+    } else {
+      // Not getByLabel(/^dealer$/i): the label wraps the select, so its accessible
+      // name is the label text plus the selected option, "Dealer Coastal Agri
+      // Enterprises · South", and an anchored regex can never match it. The dealer
+      // picker is the only select in this form, so it is addressed directly and
+      // then asserted by value rather than by name.
+      const dealerSelect = form.locator("select");
+      if ((await dealerSelect.count()) !== 1) {
+        fail("sales/orders", `expected exactly 1 dealer select in the proxy form, found ${await dealerSelect.count()}`);
+      } else {
+        await dealerSelect.selectOption(target.id);
+        const chosen = await dealerSelect.inputValue();
+        same("sales/orders", chosen, target.id, "dealer selected in the picker");
+      }
+
+      // Same SKU as the main order so available stock is known to be sufficient,
+      // but a much smaller quantity: this order is never approved, dispatched or
+      // paid, it exists only to prove the write path.
+      const row = form.locator("tr").filter({ hasText: SKU }).first();
+      if ((await row.count()) === 0) {
+        fail("sales/orders", `the proxy catalog did not offer ${SKU} to order`);
+      } else {
+        await row.getByLabel(/quantity/i).first().fill(String(PROXY_QTY));
+        await form.getByLabel(/requested delivery date/i).fill(businessDate());
+        await form.getByRole("button", { name: /submit proxy order/i }).click();
+        const placed = await form
+          .getByText(/order submitted/i)
+          .waitFor({ timeout: 30000 })
+          .then(() => true)
+          .catch(() => false);
+        step("proxy order", placed ? `placed for ${target.name} via the browser` : "no confirmation appeared");
+        if (!placed) await page.screenshot({ path: path.join(SHOTS, "FAILED-10-proxy.png"), fullPage: true });
+      }
+    }
+    seen.drain();
+    await context.close();
+
+    const created = await one(
+      `select o.id, o.status, o.dealer_id, o.created_by,
+              (select count(*)::int from public.order_items i where i.order_id = o.id) as lines
+         from public.orders o
+        where o.dealer_id = $1
+        order by o.created_at desc
+        limit 1`,
+      [target.id],
+    );
+    check("sales/orders", Boolean(created), `no order was created for ${target.name}`);
+    if (created) {
+      const owner = await one(`select email from public.users where id = $1`, [created.created_by]);
+      step("proxy order row", `status ${created.status}, created by ${owner ? owner.email : created.created_by}`);
+      // same, not eq: eq coerces both sides with Number(), which turns a uuid into
+      // NaN, and Object.is(NaN, NaN) is true, so an eq check between two ids
+      // passes without comparing anything.
+      same("sales/orders", created.dealer_id, target.id, "the order is on the dealer the rep named");
+      same("sales/orders", owner?.email, ACCOUNTS.salesRep.email, "the order was placed by the sales rep account");
+      eq("sales/orders", created.lines, 1, "order line count");
+
+      // This order exists only to exercise the write path, and it is never
+      // approved, so it is removed rather than left behind as a pending order
+      // that would keep showing up in a manager's queue. The order the lifecycle
+      // is about is left alone above.
+      await db.query(`delete from public.orders where id = $1`, [created.id]);
+      const after = await one(`select count(*)::int as n from public.orders`);
+      eq("sales/orders", after.n, before.n, "the proxy order was cleaned up");
+    }
+  }
+}
+
+// ------------------- 11. finance edits a dealer's credit limit through the UI ---
+{
+  // Legacy Agro Supplies is the dealer with a zero limit, so raising and
+  // restoring it is a visible change rather than a rewrite of the same number.
+  const dealer = await one(
+    `select id, name, credit_limit::numeric as credit_limit
+       from dealers order by credit_limit asc, name limit 1`,
+  );
+  check("internal/finance", Boolean(dealer), "no dealer was available to edit");
+
+  if (dealer) {
+    const raised = Math.max(50000, Math.round(Number(dealer.credit_limit)) + 25000);
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+    const { page, seen } = await login(context, "finance");
+    await visit(page, `${BASE}/internal/finance`);
+
+    // One form per dealer, each in a card headed by the dealer's name, so the
+    // right one is found by looking at the card rather than trusting an index.
+    const forms = page.locator("main form").filter({ has: page.getByRole("button", { name: /save dealer account/i }) });
+    const total = await forms.count();
+    let form = null;
+    for (let index = 0; index < total; index += 1) {
+      // xpath=.. is the card that holds this form, which opens with the dealer
+      // name. xpath=../.. is the wrapper around every dealer card, so its text
+      // contains every dealer name and the match succeeds on the first form in
+      // the list rather than the intended one, which silently edits the wrong
+      // account. startsWith is used instead of includes for the same reason.
+      const card = await forms.nth(index).locator("xpath=..").innerText();
+      if (card.trimStart().startsWith(dealer.name)) {
+        form = forms.nth(index);
+        break;
+      }
+    }
+
+    if (!form) {
+      fail("internal/finance", `no dealer credit form was rendered for ${dealer.name}`);
+    } else {
+      // The direct-write grant is split by column, so a finance user must not be
+      // offered the sales rep picker: the database would refuse that column for
+      // this role, and offering it would be a form that cannot succeed.
+      eq("internal/finance", await form.getByLabel(/sales rep/i).count(), 0, "finance is not offered the admin-only rep picker");
+
+      await form.getByLabel(/base credit limit/i).fill(String(raised));
+      await form.getByRole("button", { name: /save dealer account/i }).click();
+      const saved = await form
+        .getByText(/dealer account updated/i)
+        .waitFor({ timeout: 30000 })
+        .then(() => true)
+        .catch(() => false);
+      step("dealer credit", saved ? `${dealer.name} limit set to ${raised} via the browser` : "no confirmation appeared");
+      if (!saved) await page.screenshot({ path: path.join(SHOTS, "FAILED-11-credit.png"), fullPage: true });
+
+      const written = await one(`select credit_limit::numeric as credit_limit from public.dealers where id = $1`, [dealer.id]);
+      eq("internal/finance", Number(written.credit_limit), raised, "credit limit as typed");
+
+      // Put it back, so a rerun starts from the same place and the seed is not
+      // quietly reshaped by running the tests.
+      await form.getByLabel(/base credit limit/i).fill(String(Number(dealer.credit_limit)));
+      await form.getByRole("button", { name: /save dealer account/i }).click();
+      const restored = await form
+        .getByText(/dealer account updated/i)
+        .waitFor({ timeout: 30000 })
+        .then(() => true)
+        .catch(() => false);
+      check("internal/finance", restored, "the credit limit could not be restored through the browser");
+      const back = await one(`select credit_limit::numeric as credit_limit from public.dealers where id = $1`, [dealer.id]);
+      eq("internal/finance", Number(back.credit_limit), Number(dealer.credit_limit), "credit limit restored");
+      step("dealer credit restore", `${dealer.name} limit back at ${Number(dealer.credit_limit)}`);
+    }
+    seen.drain();
+    await context.close();
+  }
+}
+
+// ----------------- 12. admin prices a product and the price list records it ---
+{
+  const sku = `E2E-PRICE-${Date.now()}`;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const { page, seen } = await login(context, "admin");
+  await visit(page, `${BASE}/internal/admin`);
+
+  // admin_upsert_product is one SECURITY DEFINER call, and the create form is the
+  // only place a brand new SKU can enter the catalogue. Inserting the row through
+  // SQL would prove the column list and skip the function, which is the part that
+  // has to refuse a non-admin and a missing HSN code.
+  const create = page.locator("form").filter({ has: page.getByRole("button", { name: "Create product" }) });
+  const creating = await create.count();
+  if (creating !== 1) {
+    fail("internal/admin", `expected exactly 1 create-product form, found ${creating}`);
+  } else {
+    // Every one of these is required by canSubmit, so an empty box leaves the
+    // button disabled and the step times out instead of failing loudly.
+    await create.getByLabel(/sku/i).fill(sku);
+    await create.getByLabel(/^name/i).fill(`E2E Priced Item ${sku.slice(-6)}`);
+    await create.getByLabel(/category/i).fill("E2E Fixture");
+    await create.getByLabel(/unit of measure/i).fill("kg");
+    await create.getByLabel(/list price/i).fill("431.25");
+    await create.getByLabel(/hsn code/i).fill("9999");
+    await create.getByRole("button", { name: "Create product" }).click();
+
+    const made = await create
+      .getByText(/product created/i)
+      .waitFor({ timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    if (made) step("product created", `${sku} priced at 431.25 through the admin screen`);
+    else {
+      fail("internal/admin", "no 'Product created.' confirmation appeared");
+      await page.screenshot({ path: path.join(SHOTS, "FAILED-12-product.png"), fullPage: true });
+    }
+  }
+  seen.drain();
+  await context.close();
+
+  const product = await one(`select id, price::numeric as price, hsn_code from public.products where sku = $1`, [sku]);
+  check("internal/admin", Boolean(product), `no products row was created for ${sku}`);
+  if (product) {
+    eq("internal/admin", Number(product.price), 431.25, "price as typed");
+    same("internal/admin", product.hsn_code, "9999", "HSN code as typed");
+
+    // The price list is a second function on the same screen, and a dealer price
+    // on top of a catalogue price is the case that matters: a dealer can only
+    // ever see its own price, so the entry has to exist before the portal can
+    // show anything different from the catalogue.
+    const priceContext = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+    const { page, seen } = await login(priceContext, "admin");
+    await visit(page, `${BASE}/internal/admin`);
+
+    const priceForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Create price" }) });
+    if ((await priceForm.count()) !== 1) {
+      fail("internal/admin", `expected exactly 1 create-price form, found ${await priceForm.count()}`);
+    } else {
+      // The dealer picker is not rendered until the scope is switched, so the
+      // scope select has to be set first or there is no dealer box to fill.
+      await priceForm.getByLabel(/applies to/i).selectOption("dealer");
+      await priceForm.getByLabel(/^product/i).selectOption(product.id);
+      await priceForm.getByLabel(/^dealer/i).selectOption(DEALER_ID);
+      await priceForm.getByLabel(/^price/i).fill("412.00");
+      await priceForm.getByRole("button", { name: "Create price" }).click();
+
+      const priced = await priceForm
+        .getByText(/price created/i)
+        .waitFor({ timeout: 30000 })
+        .then(() => true)
+        .catch(() => false);
+      if (priced) step("dealer price created", `412.00 for ${sku} on the demo dealer`);
+      else {
+        fail("internal/admin", "no 'Price created.' confirmation appeared");
+        await page.screenshot({ path: path.join(SHOTS, "FAILED-12-price.png"), fullPage: true });
+      }
+    }
+    seen.drain();
+    await priceContext.close();
+
+    const entry = await one(
+      `select pl.price::numeric as price, pl.dealer_id, d.name
+         from public.price_lists pl
+         join public.dealers d on d.id = pl.dealer_id
+        where pl.product_id = $1 and pl.dealer_id = $2`,
+      [product.id, DEALER_ID],
+    );
+    check("internal/admin", Boolean(entry), `no price_list row was created for ${sku} and the demo dealer`);
+    if (entry) {
+      eq("internal/admin", Number(entry.price), 412, "dealer price as typed");
+      step("dealer price row", `${sku} at 412.00 for ${entry.name}`);
+    }
+
+    // Both rows exist only to prove the two write paths. Left behind, they would
+    // grow the catalogue and the price list on every rerun and start showing up
+    // in the dealer catalogue, so they are removed here. No order has referenced
+    // this SKU, so the delete cannot touch a document line.
+    await db.query(`delete from public.price_lists where product_id = $1`, [product.id]);
+    await db.query(`delete from public.products where id = $1`, [product.id]);
+    const gone = await one(
+      `select
+         (select count(*)::int from public.products where id = $1) as products,
+         (select count(*)::int from public.price_lists where product_id = $1) as prices`,
+      [product.id],
+    );
+    eq("internal/admin", gone.products, 0, "the test product was cleaned up");
+    eq("internal/admin", gone.prices, 0, "the test dealer price was cleaned up");
+    step("admin fixture cleanup", `${sku} and its dealer price removed`);
+  }
+}
+
+// ---------------- 13. logistics confirms the delivery of the dispatched order ---
+{
+  const deliveryNote = "Signed for by the depot manager, 1 of 12 cartons short";
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+  const { page, seen } = await login(context, "logistics");
+  await visit(page, `${BASE}/internal/delivery`);
+
+  // The board labels this order through private.dealer_display_name, because the
+  // dealers policy hides the row from logistics itself. A board that joined
+  // dealers would render an empty dealer name here, so the name is asserted, not
+  // just the button.
+  // delivery_board derives its order_reference as left(id::text, 8) because
+  // orders has no reference column of its own. Reading it from the board rather
+  // than recomputing it keeps the assertion honest: if the view and this string
+  // ever disagree, the card is not found and the step fails.
+  const reference = orderId.slice(0, 8);
+  const panel = page
+    .locator("main section")
+    .filter({ hasText: "Awaiting delivery confirmation" })
+    .locator("div.rounded-2xl")
+    .filter({ hasText: reference });
+  if ((await panel.count()) !== 1) {
+    fail("internal/delivery", `expected exactly 1 in-transit card for ${reference}, found ${await panel.count()}`);
+  } else {
+    const labelled = await panel.getByText(/days on the road|ahead|Dispatched today/).count();
+    check("internal/delivery", labelled > 0, `the ${reference} card carried no transit day count`);
+
+    await panel.getByPlaceholder(/who signed, what was short/i).fill(deliveryNote);
+    await panel.getByRole("button", { name: "Confirm delivery" }).click();
+
+    const confirmed = await page
+      .getByText(`Delivery confirmed for ${reference}.`)
+      .waitFor({ timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    if (confirmed) step("delivery confirmed", `note recorded against ${reference}`);
+    else {
+      fail("internal/delivery", `no 'Delivery confirmed for ${reference}.' confirmation appeared`);
+      await page.screenshot({ path: path.join(SHOTS, "FAILED-13-delivery.png"), fullPage: true });
+    }
+  }
+  seen.drain();
+  await context.close();
+
+  const delivered = await one(
+    `select delivery_status, delivery_note, delivered_at, status from public.orders where id = $1`,
+    [orderId],
+  );
+  same("internal/delivery", delivered.delivery_status, "delivered", "delivery_status after confirmation");
+  same("internal/delivery", delivered.delivery_note, deliveryNote, "delivery note as typed");
+  check("internal/delivery", Boolean(delivered.delivered_at), "delivered_at was not recorded");
+  // The whole point of keeping delivery separate from order_status: a confirmed
+  // consignment must not look like a different approval state to the sales and
+  // finance screens that read status.
+  same("internal/delivery", delivered.status, "invoiced", "order status untouched by delivery");
+
+  // The function raises rather than returning a flag, so the refusal is caught
+  // instead of read. A second confirmation that silently succeeded would
+  // overwrite the delivery note and its timestamp, which is the exact corruption
+  // the guard exists to prevent.
+  //
+  // The call has to run as logistics, not as the connection owner. mark_order_delivered
+  // checks the role before it looks at the order, so a raw call from a superuser
+  // connection is refused for the wrong reason and would pass whether or not the
+  // second-call guard existed. The JWT claim is set for the transaction and the
+  // transaction is rolled back, so the retry cannot leave a write behind even if
+  // the guard is removed later.
+  const repeat = await db.connect().catch(() => db);
+  let second = null;
+  try {
+    await repeat.query("begin");
+    const { rows: actors } = await repeat.query(
+      `select id from public.users where email = $1 and is_active`,
+      [ACCOUNTS.logistics.email],
+    );
+    check("internal/delivery", actors.length === 1, `expected exactly 1 active logistics user, found ${actors.length}`);
+    await repeat.query(`select set_config('request.jwt.claim.sub', $1, true)`, [actors[0]?.id ?? ""]);
+    await repeat.query(`select public.mark_order_delivered($1, $2)`, [orderId, "second attempt"]);
+    second = "accepted";
+  } catch (error) {
+    second = error.message;
+  } finally {
+    await repeat.query("rollback");
+    if (repeat !== db) repeat.release();
+  }
+  // The state guard, not the role guard, is what this step is about, so the
+  // message is asserted. "Only logistics can confirm a delivery" here would mean
+  // the claim never reached the function and the check proved nothing.
+  check(
+    "internal/delivery",
+    /has not been dispatched yet, so there is no delivery to confirm/.test(second),
+    `a second delivery confirmation was not refused by the state guard (${second})`,
+  );
+  const still = await one(`select delivery_note, delivered_at from public.orders where id = $1`, [orderId]);
+  same("internal/delivery", still.delivery_note, deliveryNote, "delivery note unchanged by the refused attempt");
 }
 
 await browser.close();

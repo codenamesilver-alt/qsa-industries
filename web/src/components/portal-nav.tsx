@@ -10,6 +10,8 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
     { href: "/internal/quality", label: "Quality" },
     { href: "/internal/finance", label: "Finance" },
     { href: "/internal/orders", label: "Dispatch queue" },
+    { href: "/internal/delivery", label: "Delivery board" },
+    { href: "/internal/admin", label: "Administration" },
     { href: "/sales/orders", label: "Sales orders" },
   ],
   production_manager: [
@@ -31,9 +33,13 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
     { href: "/internal", label: "Overview" },
     { href: "/internal/quality", label: "Quality" },
   ],
+  // The delivery board is a separate route from the dispatch queue because it is
+  // a different question: dispatch asks which approved order needs a vehicle,
+  // delivery asks which vehicle has not been confirmed as received.
   logistics: [
     { href: "/internal", label: "Overview" },
     { href: "/internal/orders", label: "Dispatch queue" },
+    { href: "/internal/delivery", label: "Delivery board" },
   ],
   finance: [
     { href: "/internal", label: "Overview" },

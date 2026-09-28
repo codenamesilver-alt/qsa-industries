@@ -12,7 +12,7 @@ export default async function DealerOrdersPage() {
 
   return (
     <PortalShell
-      description="Follow every order from submission through approval, dispatch, invoicing, and payment status."
+      description="Follow every order from submission through approval, dispatch, delivery confirmation, invoicing, and payment status."
       eyebrow="Dealer portal / orders"
       profile={profile}
       title="See every step."
@@ -21,6 +21,10 @@ export default async function DealerOrdersPage() {
         <MetricCard detail="Still in progress" label="Open orders" value={String(open.length).padStart(2, "0")} />
         <MetricCard detail="Invoiced or rejected" label="Closed orders" value={String(closed.length).padStart(2, "0")} />
       </section>
+      <p className="mt-4 text-xs text-[#718075]">
+        Order state and consignment state are shown separately. An order can read Invoiced while the goods are still
+        In transit, so both badges have to be read together.
+      </p>
       <div className="mt-6 space-y-4">
         {orders.length ? (
           orders.map((order) => (
@@ -28,7 +32,16 @@ export default async function DealerOrdersPage() {
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(order.status)}`}>{statusLabel(order.status)}</span>
+                  {/* Consignment state is separate from the order state: an invoiced
+                      order can still be on the road, so the two are shown as two
+                      badges rather than one merged status. */}
+                  {order.delivery_status !== "awaiting_dispatch" ? (
+                    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(order.delivery_status)}`}>
+                      {statusLabel(order.delivery_status)}
+                    </span>
+                  ) : null}
                   {order.dispatch_date ? <span className="text-xs text-[#718075]">Dispatch {formatDate(order.dispatch_date)}</span> : null}
+                  {order.delivered_at ? <span className="text-xs text-[#718075]">Delivered {formatDate(order.delivered_at)}</span> : null}
                   {order.tracking_note ? <span className="text-xs text-[#718075]">{order.tracking_note}</span> : null}
                 </div>
                 <p className="text-2xl font-semibold tracking-[-0.04em]">₹{formatNumber(order.total_amount)}</p>

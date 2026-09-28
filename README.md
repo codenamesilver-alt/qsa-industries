@@ -189,6 +189,21 @@ means a test is not running the number of checks you think it is.
 prefer capturing reference counts as the table owner over switching to
 `service_role` inside a test.
 
+**Access-control tests stay on `authenticated`.** Never `set local role` to the
+owner or to `service_role` in a suite that is testing what a signed-in user may
+do. The owner role has `BYPASSRLS` and `service_role` is granted past every
+policy, so both can make an unreachable code path look reachable. This is the one
+pattern in this suite that has produced several wrong conclusions in a row — the
+unreachable `dealers` policies, `42501` assertions on `production_runs` and dealer
+region, and a writable `sales_rep_id` all passed against a role that no user
+holds.
+
+**Assert the refusal and the success separately.** For a write function with both
+a role check and a state check, call it as a role that should be refused and
+assert the error, then call it as the permitted role and assert the write. A
+caller refused for the wrong reason must not be able to learn anything about the
+row, and a suite that only checks the happy path cannot tell which check fired.
+
 ## Web app
 
 ```bash
@@ -221,7 +236,8 @@ of the ten roles it signs in through the actual login form, walks the routes tha
 role is allowed to see, and asserts the page rendered real data, then checks the
 routes that role must be refused. It fails on console errors, uncaught page
 errors, failed requests, and any page that comes back thin or showing an error
-boundary.
+boundary. Every route appears in some role's allowed or denied list, and a route
+that the code permits but the script never visits is itself a gap.
 
 Two details it exists to catch:
 
@@ -232,6 +248,9 @@ Two details it exists to catch:
 - **The allowed/denied lists must track the code.** `ACCOUNTS` in the script
   mirrors the `requireProfile` role lists in `web/src/app`. If a page's role list
   changes, update the script or the coverage is silently wrong.
+- **A denial is asserted three ways.** The route must land on `/unauthorized`, must
+  say the route is outside the role, and must offer a way back. A redirect that
+  lands somewhere plausible without explaining itself is still a broken gate.
 
 Screenshots of every visited page land in `.smoke/` (gitignored) for eyeballing
 when something fails. `SMOKE_BASE_URL` and `SMOKE_SHOTS` override the defaults.
@@ -249,19 +268,36 @@ SMOKE_PASSWORD=<demo password> npm run ui:lifecycle
 E2E_QTY=211 SMOKE_PASSWORD=<demo password> npm run ui:lifecycle
 ```
 
-`scripts/ui-lifecycle.mjs` walks one order through its whole life in a real
-browser, as four different users, and checks the database after each step:
-dealer submits, sales manager approves, logistics dispatches, finance generates
-the invoice, finance records a full payment. It then asserts the invoice number,
-GST split, payment allocation, ledger balance, stock movement, dealer exposure
-back at its starting value, and the table counts.
+`scripts/ui-lifecycle.mjs` drives thirteen write paths in a real browser, as ten
+different users across the three portals, and checks the database after each one.
+The first five are one order through its whole life: dealer submits, sales manager
+approves, logistics dispatches, finance generates the invoice, finance records a
+full payment. The run then asserts the invoice number, GST split, payment
+allocation, ledger balance, stock movement, dealer exposure back at its starting
+value, and the table counts. The remaining eight are separate write paths:
+a QC verdict, a finance grace-days setting, a raised purchase order, a received
+batch, a sales rep's proxy order for a mapped dealer, a credit-limit edit by
+finance, a product and dealer price created through the admin screen, and a
+delivery confirmation against the consignment from step 3.
+
+The last flow asserts the delivery note, the timestamp, the new `delivery_status`
+and that `public.order_status` is still `invoiced`. Consignment state and order
+state are separate columns on purpose: an order can be paid for while the goods are
+still on the road.
 
 **It creates real data and does not clean up after a successful run.** Each run
-leaves one dispatched, invoiced and paid order. That is deliberate — an
-invoiced order is an accounting fact, not a fixture — but it means the demo
-dataset grows by one order per run, and `ui:lifecycle` is not part of `npm test`.
+leaves one dispatched, invoiced and paid order, plus the purchase order, batch and
+QC record it made. That is deliberate — an invoiced order is an accounting fact,
+not a fixture — but it means the demo dataset grows on every run, and
+`ui:lifecycle` is not part of `npm test`.
 
-Two guards make repeat runs safe:
+Three of the eight extra flows do tidy up after themselves, because they would
+otherwise accumulate: the proxy order is deleted, the dealer's credit limit is put
+back to its pre-step value, and the product and dealer price created on the admin
+screen are removed once both writes are read back. No order references that SKU,
+so the delete cannot reach a document line.
+
+Three guards make repeat runs safe:
 
 - **It refuses to start on an ambiguous amount.** The database read is read-only,
   but if an existing order for that dealer already totals the same value, the
@@ -272,8 +308,42 @@ Two guards make repeat runs safe:
   it moved — the insert-only trigger means the helper has to put the level back
   itself. It refuses `invoiced` and `rejected`, because reversing those is a real
   accounting reversal rather than a test cleanup.
+- **Every read-back names the row it checked.** Where a step creates a record and
+  then finds it again through a UI, the assertion names the dealer, product or
+  order it looked up. Two earlier checks passed while comparing the wrong rows,
+  and a locator that matched more than one form is exactly how that happens.
 
 Use `npm run db:audit` afterwards to see what a run left behind.
+
+## Admin and delivery
+
+`/internal/admin` and `/internal/delivery`, both gated the same way as the rest of
+the internal portal: admin alone for `/internal/admin`, admin and logistics for
+`/internal/delivery`.
+
+Products, dealers, users and prices have no direct browser write path, because
+`authenticated` holds `SELECT` and nothing else on those tables. Admin writes go
+through `SECURITY DEFINER` functions — `create_product`, `update_product`,
+`create_dealer`, `update_dealer`, `update_user_access`, `set_dealer_price` — each
+of which checks the caller's role itself. `user_directory` is a view over
+`public.users` and `public.auth.users` for the same reason: `public.users` has no
+email column, and a function that exposes `auth.users` to everyone would hand out
+every account in the project.
+
+Consignment state lives in `delivery_status` on `orders`, not in
+`public.order_status`, and the two are never merged. `dispatch_order` sets both;
+`mark_order_delivered` sets only the delivery columns. A paid order whose goods are
+still on the road is the normal case, not a contradiction.
+
+The delivery board is a `SECURITY DEFINER` view that reads `dealers` for the
+caller, because `logistics` is deliberately not in `can_view_dealer` and adding it
+there to satisfy one name column per order would widen dealer visibility across
+the whole schema.
+
+`price_lists_select_scope` hides future-dated rows, so a price scheduled for next
+month is invisible on the admin screen while the catalogue still computes against
+it. That is inherited from the 20260926 schema and is a real gap in the admin
+view.
 
 ## Continuous integration
 
@@ -316,7 +386,7 @@ that is easy to forget and expensive to discover later: without it, a restored
 database hands out invoice numbers that already exist.
 
 `db:restore-check` is the part that matters. A backup nobody has restored is a
-hypothesis. It creates a throwaway database, replays all 38 migrations, truncates
+hypothesis. It creates a throwaway database, replays all 41 migrations, truncates
 the seeded rows, loads the dump in one transaction with
 `session_replication_role = replica`, then checks 31 things and drops the
 database:
@@ -332,7 +402,7 @@ database:
 - the stock ledger reconciliation, the invoice sequence sitting past the highest
   invoice issued, no duplicated invoice numbers, every invoice still having its
   lines;
-- all six pgTAP suites, 222 assertions, against the restored copy.
+- all seven pgTAP suites, 355 assertions, against the restored copy.
 
 Options:
 

@@ -24,6 +24,9 @@ if (!PASSWORD) {
   process.exit(2);
 }
 
+// /internal/delivery is logistics and admin, /internal/admin is admin alone. They
+// are listed here rather than left out so that a role change in requireProfile
+// fails this test instead of quietly going untested.
 const INTERNAL = [
   "/internal",
   "/internal/production",
@@ -31,7 +34,9 @@ const INTERNAL = [
   "/internal/purchasing",
   "/internal/quality",
   "/internal/orders",
+  "/internal/delivery",
   "/internal/finance",
+  "/internal/admin",
 ];
 const SALES = ["/sales", "/sales/orders"];
 const DEALER = ["/dealer", "/dealer/catalog", "/dealer/orders"];
@@ -45,7 +50,11 @@ const ACCOUNTS = [
     role: "admin",
     portal: "internal",
     email: "admin@qsa-demo.in",
-    routes: INTERNAL,
+    // /sales/orders is in this list, and not in the denied list, because
+    // requireProfile on that page includes admin and the admin nav links to it.
+    // A route the nav offers and the code permits, asserted nowhere, is the gap
+    // this matrix is meant to close.
+    routes: [...INTERNAL, "/sales/orders"],
     denied: ["/sales", "/dealer"],
   },
   {
@@ -53,14 +62,24 @@ const ACCOUNTS = [
     portal: "internal",
     email: "operations.production@qsa-demo.in",
     routes: ["/internal", "/internal/production", "/internal/inventory", "/internal/purchasing", "/internal/quality"],
-    denied: ["/internal/orders", "/internal/finance"],
+    // Dispatch and delivery are both logistics questions, and the admin screen is
+    // an admin one. Refusing them here is what stops a later role change from
+    // quietly widening a role nobody intended to widen.
+    denied: ["/internal/orders", "/internal/delivery", "/internal/finance", "/internal/admin"],
   },
   {
     role: "inventory_manager",
     portal: "internal",
     email: "operations.inventory@qsa-demo.in",
     routes: ["/internal", "/internal/inventory", "/internal/purchasing"],
-    denied: ["/internal/production", "/internal/quality", "/internal/orders", "/internal/finance"],
+    denied: [
+      "/internal/production",
+      "/internal/quality",
+      "/internal/orders",
+      "/internal/delivery",
+      "/internal/finance",
+      "/internal/admin",
+    ],
   },
   // qc_staff is a quality-only role: it may see runs to judge and the materials
   // they consume, but nothing about production entry, stock, purchasing, orders,
@@ -75,22 +94,30 @@ const ACCOUNTS = [
       "/internal/inventory",
       "/internal/purchasing",
       "/internal/orders",
+      "/internal/delivery",
       "/internal/finance",
+      "/internal/admin",
       "/sales",
       "/dealer",
     ],
   },
   {
+    // Logistics is the one role the delivery board was written for: it reads the
+    // whole order book but the dealers policy hides every dealer row from it, so
+    // the board labels consignments through private.dealer_display_name instead
+    // of joining. A 200 here with rows on it is the proof that fix holds.
     role: "logistics",
     portal: "internal",
     email: "logistics@qsa-demo.in",
-    routes: ["/internal", "/internal/orders"],
+    routes: ["/internal", "/internal/orders", "/internal/delivery"],
+    content: { "/internal/delivery": [/Ready to dispatch/] },
     denied: [
       "/internal/production",
       "/internal/inventory",
       "/internal/purchasing",
       "/internal/quality",
       "/internal/finance",
+      "/internal/admin",
     ],
   },
   {
@@ -103,15 +130,21 @@ const ACCOUNTS = [
       "/internal/inventory",
       "/internal/quality",
       "/internal/orders",
+      "/internal/delivery",
+      "/internal/admin",
     ],
   },
-  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/dealer"], content: { "/sales/orders": [/Proxy order/] } },
+  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"], content: { "/sales/orders": [/Proxy order/] } },
   {
     role: "sales_manager",
     portal: "sales",
     email: "meera.nair@qsa-demo.in",
     routes: SALES,
-    denied: ["/internal", "/dealer"],
+    // The two new screens are listed by their own paths, not only through
+    // /internal. A role gate on the parent would refuse a sales user today, but
+    // only the leaf routes prove the gate on each page rather than on the layout
+    // that happens to wrap it.
+    denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"],
     // create_dealer_order accepts a dealer only for the dealer itself, a mapped
     // sales rep, or an admin. A manager reaching the proxy form would only ever
     // get an error back, so the panel must not be offered to them at all.
@@ -122,7 +155,7 @@ const ACCOUNTS = [
     portal: "sales",
     email: "nadia.kapoor@qsa-demo.in",
     routes: SALES,
-    denied: ["/internal", "/dealer"],
+    denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"],
     absent: { "/sales/orders": [/Proxy order/] },
   },
   {
@@ -130,7 +163,10 @@ const ACCOUNTS = [
     portal: "dealer",
     email: "dealer@qsa-demo.in",
     routes: DEALER,
-    denied: ["/internal", "/internal/finance", "/sales"],
+    // A dealer must not reach the delivery board either. The board is
+    // security_invoker on orders, so a dealer would see their own consignments if
+    // the route gate were the only control; the route gate is the control.
+    denied: ["/internal", "/internal/finance", "/internal/delivery", "/internal/admin", "/sales"],
   },
 ];
 
@@ -161,7 +197,12 @@ const CONTENT = {
   "/internal/purchasing": [/Raise purchase order/, /Purchase order register/],
   "/internal/quality": [/Record QC verdict/, /Quality queue/],
   "/internal/orders": [/Mark dispatched|Dispatch queue/],
+  "/internal/delivery": [/Ready to dispatch|Awaiting delivery confirmation/],
   "/internal/finance": [/QSA-2026-\d{4}/],
+  // The admin screen renders the create-product form above the catalogue, so the
+  // heading alone is enough to prove the page is the admin one and not an
+  // unauthorized redirect that happens to carry the word "admin".
+  "/internal/admin": [/Create a product/, /Price list/, /Users, roles and reporting lines/],
   "/sales": [/Orders tracked/],
   "/sales/orders": [/Exposure/],
   "/dealer": [/Coastal Agri Enterprises/],
