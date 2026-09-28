@@ -386,7 +386,7 @@ that is easy to forget and expensive to discover later: without it, a restored
 database hands out invoice numbers that already exist.
 
 `db:restore-check` is the part that matters. A backup nobody has restored is a
-hypothesis. It creates a throwaway database, replays all 41 migrations, truncates
+hypothesis. It creates a throwaway database, replays all 49 migrations, truncates
 the seeded rows, loads the dump in one transaction with
 `session_replication_role = replica`, then checks 31 things and drops the
 database:
@@ -402,7 +402,7 @@ database:
 - the stock ledger reconciliation, the invoice sequence sitting past the highest
   invoice issued, no duplicated invoice numbers, every invoice still having its
   lines;
-- all seven pgTAP suites, 355 assertions, against the restored copy.
+- all eleven pgTAP suites, 523 assertions, against the restored copy.
 
 Options:
 
@@ -477,6 +477,59 @@ The Tally-side mapping — voucher types, ledger names, GST split, voucher
 numbering, and the XML shape — is blocked on knowing which Tally version and
 import format to target. [`docs/TALLY_EXPORT.md`](docs/TALLY_EXPORT.md) records
 the column-by-column mapping and lists the seven open decisions.
+
+That work is deliberately parked until final integration, when the Tally API is
+available. The database side is complete and tested, so the remaining work is
+mapping and verification, not design.
+
+## Reporting
+
+PRD §9.4 asks for "sales trends by dealer, rep, manager, region/period". That is
+served by `/sales/reports`, from four views added in
+`20260928100000_regional_sales_reporting.sql`:
+
+| View | Grain | Used for |
+| --- | --- | --- |
+| `sales_by_region_period` | region × calendar month | the trend chart |
+| `sales_by_region_period_totals` | region, all time | ranking regions |
+| `sales_by_rep` | rep × region, rolled up one level to the manager | team reporting |
+| `sales_by_dealer` | dealer, including dealers with no orders | the drill-down table |
+
+Two definitions are load bearing, and the whole report depends on them:
+
+- **realized** — orders that are approved, dispatched, or invoiced. Revenue the
+  business has committed to and not walked back.
+- **pipeline** — orders that are pending or pending-director. Live but
+  uncommitted, which is also exactly what credit approval checks against.
+
+These are never added together. A single "order value" column that sums every
+status mixes rejected orders with delivered ones and produces a number that is
+neither revenue nor risk, which is worse than having no number because it looks
+authoritative. Rejected value is reported separately so approval quality is
+visible.
+
+All four views are `security_invoker`, so RLS runs as the calling user and a rep
+sees only their own accounts while a manager sees their reports'. The scoping is
+enforced in the database, not by filtering in the page, so the screen cannot leak
+by forgetting a clause. A rep's pipeline total and the region's total are
+deliberately allowed to differ.
+
+Periods are calendar months in `Asia/Kolkata`, matching the convention
+`sales_daily` already set. Grouping a `timestamptz` on UTC boundaries would split
+the first of each month for anything booked after 05:30, which is most of a
+working day here.
+
+A dealer's region falls back `region` → `state` → `Unassigned`, with both values
+`btrim`ed. A whitespace-only region counts as unset, because it would otherwise
+become a group literally named with spaces, separate from the state it was meant
+to fall back to.
+
+The charts in [`web/src/components/charts.tsx`](web/src/components/charts.tsx) are
+hand-rolled SVG rather than a charting dependency. Every number is already
+aggregated by a view, so there is no dataset to fit or scale interactively, and
+the components reuse the app's existing colour tokens so they cannot drift from
+the rest of the UI. They are server components, so no client-side chart library is
+pulled into the bundle.
 
 ## Before production
 

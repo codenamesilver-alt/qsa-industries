@@ -240,6 +240,7 @@ export type OrderRow = {
   total_amount: number | string;
   credit_override: boolean;
   created_at: string;
+  requested_delivery_date: string | null;
   dispatch_date: string | null;
   tracking_note: string | null;
   delivery_status: DeliveryStatusValue;
@@ -269,6 +270,60 @@ export type SalesDailyRow = {
   order_count: number | string;
   approved_sales_amount: number | string;
   rejected_amount: number | string;
+};
+
+// Regional and hierarchy rollups, PRD 9.4. realized_* is revenue the business has
+// committed to (approved, dispatched, invoiced) and pipeline_* is live but
+// uncommitted demand, which is also credit exposure. The two are never added
+// together: mixing them produces a number that is neither revenue nor risk.
+export type SalesByRegionPeriodRow = {
+  region: string;
+  period: string;
+  dealers_selling: number | string;
+  realized_orders: number | string;
+  realized_amount: number | string;
+  pipeline_orders: number | string;
+  pipeline_amount: number | string;
+  rejected_orders: number | string;
+  rejected_amount: number | string;
+};
+
+export type SalesByRegionTotalsRow = {
+  region: string;
+  dealer_count: number | string;
+  realized_orders: number | string;
+  realized_amount: number | string;
+  pipeline_orders: number | string;
+  pipeline_amount: number | string;
+};
+
+export type SalesByRepRow = {
+  rep_id: string;
+  rep_name: string;
+  manager_id: string | null;
+  manager_name: string;
+  region: string;
+  dealer_count: number | string;
+  realized_orders: number | string;
+  realized_amount: number | string;
+  pipeline_orders: number | string;
+  pipeline_amount: number | string;
+};
+
+export type SalesByDealerRow = {
+  dealer_id: string;
+  dealer_name: string;
+  region: string;
+  state: string | null;
+  status: string;
+  credit_limit: number | string;
+  realized_orders: number | string;
+  realized_amount: number | string;
+  pipeline_orders: number | string;
+  pipeline_amount: number | string;
+  invoiced_amount: number | string;
+  open_invoices: number | string;
+  outstanding_amount: number | string;
 };
 
 export type DealerExposureRow = {
@@ -428,6 +483,58 @@ export async function getSalesDaily() {
   return (data ?? []) as SalesDailyRow[];
 }
 
+// Ordered oldest first, unlike getSalesDaily, because a trend line reads left to
+// right. The view is month-bucketed rather than day-bucketed, so an empty month is
+// genuinely absent instead of present with a zero; the chart component backfills it.
+export async function getSalesByRegionPeriod() {
+  const supabase = await createClient();
+  const rows = await fetchAll<SalesByRegionPeriodRow>((from, to) =>
+    supabase
+      .from("sales_by_region_period")
+      .select("*")
+      .order("period", { ascending: true })
+      .order("region")
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getSalesByRegionTotals() {
+  const supabase = await createClient();
+  const rows = await fetchAll<SalesByRegionTotalsRow>((from, to) =>
+    supabase
+      .from("sales_by_region_period_totals")
+      .select("*")
+      .order("realized_amount", { ascending: false })
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getSalesByRep() {
+  const supabase = await createClient();
+  const rows = await fetchAll<SalesByRepRow>((from, to) =>
+    supabase
+      .from("sales_by_rep")
+      .select("*")
+      .order("realized_amount", { ascending: false })
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getSalesByDealer() {
+  const supabase = await createClient();
+  const rows = await fetchAll<SalesByDealerRow>((from, to) =>
+    supabase
+      .from("sales_by_dealer")
+      .select("*")
+      .order("realized_amount", { ascending: false })
+      .range(from, to),
+  );
+  return rows;
+}
+
 export async function getDealerExposure() {
   const supabase = await createClient();
   const rows = await fetchAll<DealerExposureRow>((from, to) =>
@@ -465,6 +572,22 @@ export async function getDealerCatalog() {
       .range(from, to),
   );
   return rows;
+}
+
+// The caller's own catalogue, priced for the caller's own dealer. A rep or an
+// admin has no dealer, so dealer_catalog falls back to the standard tier for them
+// and would show a total their database never charges for a dealer with a price
+// list. This prices a dealer they are actually entitled to price, which is what an
+// order form has to show. The RPC refuses a dealer the caller may not price, so
+// this is not a way to read another dealer's prices.
+export async function getDealerCatalogFor(dealerId: string): Promise<DealerCatalogRow[]> {
+  if (!dealerId) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("dealer_catalog_for", {
+    target_dealer_id: dealerId,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as DealerCatalogRow[];
 }
 
 export async function getDealerOrders() {

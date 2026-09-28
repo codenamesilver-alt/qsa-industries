@@ -13,6 +13,7 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
     { href: "/internal/delivery", label: "Delivery board" },
     { href: "/internal/admin", label: "Administration" },
     { href: "/sales/orders", label: "Sales orders" },
+    { href: "/sales/reports", label: "Reporting" },
   ],
   production_manager: [
     { href: "/internal", label: "Overview" },
@@ -45,18 +46,28 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
     { href: "/internal", label: "Overview" },
     { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/finance", label: "Finance" },
+    // Finance sees every dealer regardless of reporting line, so the reporting
+    // views are as much theirs as the director's. The amounts on that screen are
+    // the same realized/pipeline/outstanding split the finance screens already use.
+    { href: "/sales/reports", label: "Reporting" },
   ],
   sales_rep: [
     { href: "/sales", label: "Overview" },
     { href: "/sales/orders", label: "Orders" },
+    { href: "/sales/reports", label: "My reporting" },
   ],
   sales_manager: [
     { href: "/sales", label: "Overview" },
     { href: "/sales/orders", label: "Approvals" },
+    { href: "/sales/reports", label: "Team reporting" },
   ],
+  // PRD Phase 4 asks for a sales director oversight dashboard. The director's own
+  // queue is where escalations wait, and this is the wider view across every
+  // manager: territory, team, and the credit picture they all sit inside.
   sales_director: [
     { href: "/sales", label: "Overview" },
     { href: "/sales/orders", label: "Director queue" },
+    { href: "/sales/reports", label: "Oversight" },
   ],
   dealer: [
     { href: "/dealer", label: "Overview" },

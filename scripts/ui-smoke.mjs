@@ -38,7 +38,7 @@ const INTERNAL = [
   "/internal/finance",
   "/internal/admin",
 ];
-const SALES = ["/sales", "/sales/orders"];
+const SALES = ["/sales", "/sales/orders", "/sales/reports"];
 const DEALER = ["/dealer", "/dealer/catalog", "/dealer/orders"];
 
 // `routes` must render the role's own pages; `denied` must bounce to
@@ -54,7 +54,7 @@ const ACCOUNTS = [
     // requireProfile on that page includes admin and the admin nav links to it.
     // A route the nav offers and the code permits, asserted nowhere, is the gap
     // this matrix is meant to close.
-    routes: [...INTERNAL, "/sales/orders"],
+    routes: [...INTERNAL, "/sales/orders", "/sales/reports"],
     denied: ["/sales", "/dealer"],
   },
   {
@@ -65,7 +65,7 @@ const ACCOUNTS = [
     // Dispatch and delivery are both logistics questions, and the admin screen is
     // an admin one. Refusing them here is what stops a later role change from
     // quietly widening a role nobody intended to widen.
-    denied: ["/internal/orders", "/internal/delivery", "/internal/finance", "/internal/admin"],
+    denied: ["/internal/orders", "/internal/delivery", "/internal/finance", "/internal/admin", "/sales/reports"],
   },
   {
     role: "inventory_manager",
@@ -79,6 +79,7 @@ const ACCOUNTS = [
       "/internal/delivery",
       "/internal/finance",
       "/internal/admin",
+      "/sales/reports",
     ],
   },
   // qc_staff is a quality-only role: it may see runs to judge and the materials
@@ -98,6 +99,7 @@ const ACCOUNTS = [
       "/internal/finance",
       "/internal/admin",
       "/sales",
+      "/sales/reports",
       "/dealer",
     ],
   },
@@ -124,7 +126,11 @@ const ACCOUNTS = [
     role: "finance",
     portal: "internal",
     email: "finance@qsa-demo.in",
-    routes: ["/internal", "/internal/purchasing", "/internal/finance"],
+    // /sales/reports is finance's because the reporting views are visible to them
+    // in the database, not just to the sales hierarchy. Their outstanding figures
+    // are the same realized/pipeline/outstanding split the finance screens use, so
+    // refusing the screen would leave them reading a number with no drill-down.
+    routes: ["/internal", "/internal/purchasing", "/internal/finance", "/sales/reports"],
     denied: [
       "/internal/production",
       "/internal/inventory",
@@ -149,6 +155,10 @@ const ACCOUNTS = [
     // sales rep, or an admin. A manager reaching the proxy form would only ever
     // get an error back, so the panel must not be offered to them at all.
     absent: { "/sales/orders": [/Proxy order/] },
+    // The reporting screen must show a manager their team's regions, not only
+    // their own. A single-dealer manager would still pass a bare 200 check, so the
+    // panel heading is asserted to be present.
+    content: { "/sales/reports": [/Sales trend by period/] },
   },
   {
     role: "sales_director",
@@ -157,6 +167,7 @@ const ACCOUNTS = [
     routes: SALES,
     denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"],
     absent: { "/sales/orders": [/Proxy order/] },
+    content: { "/sales/reports": [/Sales trend by period/] },
   },
   {
     role: "dealer",
@@ -166,7 +177,7 @@ const ACCOUNTS = [
     // A dealer must not reach the delivery board either. The board is
     // security_invoker on orders, so a dealer would see their own consignments if
     // the route gate were the only control; the route gate is the control.
-    denied: ["/internal", "/internal/finance", "/internal/delivery", "/internal/admin", "/sales"],
+    denied: ["/internal", "/internal/finance", "/internal/delivery", "/internal/admin", "/sales", "/sales/reports"],
   },
 ];
 

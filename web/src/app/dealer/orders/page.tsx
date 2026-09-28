@@ -1,12 +1,13 @@
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
+import { OrderEditForm } from "../../../components/order-edit-form";
 import { PortalShell } from "../../../components/portal-shell";
 import { requireProfile } from "../../../lib/auth";
-import { getDealerOrders } from "../../../lib/data";
+import { getDealerCatalog, getDealerOrders } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
 
 export default async function DealerOrdersPage() {
   const profile = await requireProfile(["dealer"]);
-  const orders = await getDealerOrders();
+  const [orders, catalog] = await Promise.all([getDealerOrders(), getDealerCatalog()]);
   const open = orders.filter((order) => !["invoiced", "rejected"].includes(order.status));
   const closed = orders.filter((order) => ["invoiced", "rejected"].includes(order.status));
 
@@ -61,6 +62,10 @@ export default async function DealerOrdersPage() {
               ) : (
                 <div className="mt-4"><EmptyState message="Order lines are not visible." /></div>
               )}
+              {/* Editable while pending only, and the window closes the moment sales
+                  approve: the price shown is re-read and the total can move, and an
+                  approval is a credit decision on a specific total. */}
+              {order.status === "pending" ? <OrderEditForm catalog={catalog} order={order} /> : null}
             </DataPanel>
           ))
         ) : (

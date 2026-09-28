@@ -1,9 +1,10 @@
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
 import { OrderActions } from "../../../components/order-actions";
+import { OrderEditForm } from "../../../components/order-edit-form";
 import { PortalShell } from "../../../components/portal-shell";
 import { ProxyOrderForm } from "../../../components/proxy-order-form";
 import { requireProfile } from "../../../lib/auth";
-import { getActiveDealers, getDealerCatalog, getDealerExposure, getMappedDealers, getOrders } from "../../../lib/data";
+import { getActiveDealers, getDealerCatalogFor, getDealerExposure, getMappedDealers, getOrders } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
 
 const salesRoles = ["admin", "sales_rep", "sales_manager", "sales_director"] as const;
@@ -13,13 +14,19 @@ const salesRoles = ["admin", "sales_rep", "sales_manager", "sales_director"] as 
 // panel is not rendered for them at all.
 const proxyRoles = ["admin", "sales_rep"] as const;
 
+// edit_dealer_order opens an order to exactly these roles, for the same reason the
+// proxy panel does: a correction made for a dealer is an act done on a mapped
+// account. A manager who can approve an order cannot rewrite one, because an
+// approval is a credit decision and this is not.
+const editRoles = ["admin", "sales_rep"] as const;
+
 export default async function SalesOrdersPage() {
   const profile = await requireProfile(salesRoles);
   const canProxy = (proxyRoles as readonly string[]).includes(profile.role);
-  const [orders, exposure, catalog, proxyDealers] = await Promise.all([
+  const canEdit = (editRoles as readonly string[]).includes(profile.role);
+  const [orders, exposure, proxyDealers] = await Promise.all([
     getOrders(),
     getDealerExposure(),
-    canProxy ? getDealerCatalog() : Promise.resolve([]),
     // A rep may only name a dealer mapped to them; an admin may name any active
     // dealer. The RPC enforces both again, so the two lists differ only in what
     // the picker can offer.
@@ -33,6 +40,17 @@ export default async function SalesOrdersPage() {
   const pending = orders.filter((order) => order.status === "pending");
   const directorQueue = orders.filter((order) => order.status === "pending_director_approval");
   const approved = orders.filter((order) => order.status === "approved");
+
+  // One catalogue per dealer with an editable order, priced for that dealer. The
+  // generic dealer_catalog cannot be used here: it prices the caller's own dealer,
+  // and a rep or admin has none, so it would fall back to the standard tier and show
+  // a total that differs from what edit_dealer_order will actually charge.
+  const editableDealerIds = [...new Set(canEdit ? pending.map((order) => order.dealer_id) : [])];
+  const catalogs = new Map(
+    await Promise.all(
+      editableDealerIds.map(async (dealerId) => [dealerId, await getDealerCatalogFor(dealerId)] as const),
+    ),
+  );
 
   return (
     <PortalShell
@@ -56,7 +74,7 @@ export default async function SalesOrdersPage() {
             }
             title="Proxy order"
           >
-            <ProxyOrderForm catalog={catalog} dealers={proxyDealers} />
+            <ProxyOrderForm dealers={proxyDealers} />
           </DataPanel>
         </div>
       ) : null}
@@ -108,6 +126,9 @@ export default async function SalesOrdersPage() {
                   <EmptyState message="Order lines are not visible in current role scope." />
                 )}
                 <OrderActions orderId={order.id} role={profile.role} status={order.status} />
+                {canEdit && order.status === "pending" ? (
+                  <OrderEditForm catalog={catalogs.get(order.dealer_id) ?? []} order={order} />
+                ) : null}
               </DataPanel>
             );
           })

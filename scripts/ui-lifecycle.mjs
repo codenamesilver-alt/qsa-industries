@@ -924,6 +924,116 @@ if (lines.rows.length !== 1) {
       // approved, so it is removed rather than left behind as a pending order
       // that would keep showing up in a manager's queue. The order the lifecycle
       // is about is left alone above.
+      //
+      // The edit is exercised here, while the order is still pending, because this
+      // is the only order in the run that is guaranteed to be in that state. The
+      // main lifecycle order was approved in step 2 and has been closed to edits
+      // ever since, which is the point the negative assertion below checks.
+      const editButton = page.getByRole("button", { name: /edit this order/i });
+      const editCount = await editButton.count();
+      if (editCount === 0) {
+        fail("sales/orders", "no edit control was offered on a pending order the rep just placed");
+      } else {
+        await editButton.first().click();
+        const editForm = page.locator("main form").filter({ has: page.getByRole("button", { name: /save changes/i }) });
+        if ((await editForm.count()) === 0) {
+          fail("sales/orders", "clicking edit did not open an edit form");
+        } else {
+          // Double the quantity, so the total has to move and a stale figure cannot
+          // pass. The row is addressed by its edit input's own aria-label, which
+          // carries the product name and so cannot collide with the proxy form's
+          // "Quantity for ..." input sitting on the same page.
+          const nameRow = await one(
+            `select name from public.products where sku = $1`,
+            [SKU],
+          );
+          const quantityInput = editForm.locator(
+            `input[aria-label="Edit quantity for ${nameRow?.name ?? ""}"]`,
+          );
+          if ((await quantityInput.count()) === 0) {
+            fail("sales/orders", `the edit form did not offer ${SKU} (${nameRow?.name})`);
+          } else {
+            await quantityInput.first().fill(String(PROXY_QTY + 1));
+            await editForm.getByRole("button", { name: /save changes/i }).click();
+            const saved = await editForm
+              .getByText(/order updated/i)
+              .waitFor({ timeout: 30000 })
+              .then(() => true)
+              .catch(() => false);
+            step("order edit", saved ? `pending proxy order edited to ${PROXY_QTY + 1} via the browser` : "no confirmation appeared");
+            if (!saved) await page.screenshot({ path: path.join(SHOTS, "FAILED-10b-edit.png"), fullPage: true });
+
+            const edited = await one(
+              `select o.status,
+                      o.total_amount::numeric as total,
+                      (select quantity::numeric from public.order_items i
+                        where i.order_id = o.id
+                        order by i.product_id limit 1) as quantity,
+                      (select unit_price::numeric from public.order_items i
+                        where i.order_id = o.id
+                        order by i.product_id limit 1) as unit_price
+                 from public.orders o
+                where o.id = $1`,
+              [created.id],
+            );
+            eq("sales/orders", edited.quantity, PROXY_QTY + 1, "the edited line quantity");
+            // The rep is shown this dealer's own price, and the order is charged that
+            // price. Asserting against the dealer's price list rather than the
+            // catalogue is the point: before dealer_catalog_for, this screen showed
+            // the standard tier and the two totals disagreed.
+            const expectedPrice = await one(
+              `select coalesce(
+                        (select price from public.price_lists
+                          where product_id = (select product_id from public.order_items where order_id = $1 limit 1)
+                            and dealer_id = $2
+                            and (valid_from is null or valid_from <= private.business_date())
+                            and (valid_to is null or valid_to >= private.business_date())
+                          order by valid_from desc nulls last limit 1),
+                        (select price from public.price_lists
+                          where product_id = (select product_id from public.order_items where order_id = $1 limit 1)
+                            and price_tier = 'standard_dealer'
+                            and (valid_from is null or valid_from <= private.business_date())
+                            and (valid_to is null or valid_to >= private.business_date())
+                          order by valid_from desc nulls last limit 1),
+                        (select price from public.products
+                          where id = (select product_id from public.order_items where order_id = $1 limit 1))
+                      )::numeric as price`,
+              [created.id, created.dealer_id],
+            );
+            eq("sales/orders", edited.unit_price, expectedPrice.price, "the unit price the order was charged");
+            eq("sales/orders", edited.total, Number(expectedPrice.price) * (PROXY_QTY + 1), "the total after the edit");
+            same("sales/orders", edited.status, "pending", "the order is still pending after an edit");
+          }
+        }
+      }
+      seen.drain();
+
+      // The window is closed, and the claim is about the whole screen rather than
+      // one order: no panel that is not pending may offer an edit control. Counting
+      // by panel, not by button, so that a single pending order still offering edit
+      // cannot mask an approved one that offers it wrongly. The main lifecycle
+      // order was approved in step 2, so it is on this screen as a non-pending panel.
+      const badges = await page.evaluate(() => {
+        return [...document.querySelectorAll("main section")].map((panel) => {
+          const badge = panel.querySelector("span.rounded-full");
+          return {
+            status: badge ? (badge.textContent ?? "").trim() : "",
+            editable: [...panel.querySelectorAll("button")].some(
+              (button) => (button.textContent ?? "").trim() === "Edit this order",
+            ),
+          };
+        });
+      });
+      const editableOffPending = badges.filter((panel) => panel.editable && panel.status !== "Pending");
+      eq("sales/orders", editableOffPending.length, 0, "panels offering edit while not pending");
+      const closedSeen = badges.filter((panel) => !panel.editable && panel.status !== "Pending").length;
+      check(
+        "sales/orders",
+        closedSeen > 0,
+        "no non-pending order was on screen, so the closed edit window went unexercised",
+      );
+      step("order edit window", `${closedSeen} non-pending panel(s) offered no edit control`);
+
       await db.query(`delete from public.orders where id = $1`, [created.id]);
       const after = await one(`select count(*)::int as n from public.orders`);
       eq("sales/orders", after.n, before.n, "the proxy order was cleaned up");

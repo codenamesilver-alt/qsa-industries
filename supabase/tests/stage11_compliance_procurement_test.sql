@@ -1,5 +1,5 @@
 begin;
-select plan(157);
+select plan(160);
 
 -- Tests for everything added in the 20260926 migration block: quality control
 -- segregation of duties, proxy ordering and requested delivery dates, dealer
@@ -873,13 +873,50 @@ select ok(
   'every invoice records a place of supply'
 );
 
--- The company state is still unset, so invoices are being raised as intra-state
--- and the tax is split in two. This is a deliberate assumption and the test
--- documents it, so that it fails loudly the moment someone sets the state and
--- this stops being true.
+-- The supplying office state is confirmed as Haryana, so the GST split is no
+-- longer an assumption. This assertion used to require the state to be NULL and
+-- was written to fail the moment someone set it; what replaces it checks the
+-- rule itself, so it does not need rewriting again the next time the state is
+-- confirmed or corrected.
+select is(
+  (select company_state from public.finance_settings where id = true),
+  'Haryana'::text,
+  'the supplying office state is confirmed, so the GST split is not an assumption'
+);
+
+-- An invoice that recorded the supplying state must have split its tax to match
+-- the dealer's state: IGST only when the dealer is elsewhere, the CGST/SGST pair
+-- only when the dealer is in the same state.
+select is(
+  (select count(*)
+     from public.invoices i
+     join public.dealers d on d.id = i.dealer_id
+    where i.company_state is not null
+      and d.state is not null
+      and d.state <> i.company_state
+      and (i.cgst_amount <> 0 or i.sgst_amount <> 0 or i.igst_amount = 0)),
+  0::bigint,
+  'no invoice splits CGST or SGST for a dealer in another state'
+);
+
+select is(
+  (select count(*)
+     from public.invoices i
+     join public.dealers d on d.id = i.dealer_id
+    where i.company_state is not null
+      and d.state is not null
+      and d.state = i.company_state
+      and (i.cgst_amount = 0 or i.sgst_amount = 0 or i.igst_amount <> 0)),
+  0::bigint,
+  'no invoice splits IGST for a dealer in the supplying state'
+);
+
+-- The invoices raised before the state was confirmed are not rewritten here.
+-- Moving tax on an issued invoice needs a credit note and a reissue, which is a
+-- compliance decision rather than a test fixture, so they are queued instead.
 select ok(
-  (select company_state is null from public.finance_settings where id = true),
-  'the company state is still unset, so the GST split is an assumption'
+  (select count(*) > 0 from public.finance_place_of_supply_review),
+  'invoices raised before the state was confirmed are queued for reissue'
 );
 
 -- ===========================================================================
