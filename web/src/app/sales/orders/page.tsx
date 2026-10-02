@@ -3,6 +3,7 @@ import { OrderActions } from "../../../components/order-actions";
 import { OrderEditForm } from "../../../components/order-edit-form";
 import { PortalShell } from "../../../components/portal-shell";
 import { ProxyOrderForm } from "../../../components/proxy-order-form";
+import { RecordPicker, type PickerItem } from "../../../components/record-picker";
 import { requireProfile } from "../../../lib/auth";
 import { getActiveDealers, getDealerCatalogFor, getDealerExposure, getMappedDealers, getOrders } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
@@ -52,10 +53,104 @@ export default async function SalesOrdersPage() {
     ),
   );
 
+  // The queue is a list of orders, and it used to render one full panel per order:
+  // line items, credit exposure, the action buttons and, for a rep, the whole line
+  // editor. A director's page reached 20,000 pixels, which meant the order you were
+  // looking for could not be found without scrolling past every order above it.
+  //
+  // Each order is now one collapsed row carrying the four things that decide whether
+  // you care about it — dealer, status, date, total — and the panel opens only for
+  // the order you chose. Nothing was removed; the contents are the same panel, one
+  // order at a time.
+  const orderItems: PickerItem[] = orders.map((order) => {
+    const credit = order.dealer_id ? exposureByDealer.get(order.dealer_id) : undefined;
+    const dealerName = order.dealer?.name ?? "Dealer order";
+    const lineCount = order.order_items?.length ?? 0;
+
+    return {
+      id: order.id,
+      summary: dealerName,
+      detail: `${formatDate(order.created_at)} · ${lineCount} ${lineCount === 1 ? "line" : "lines"} · ₹${formatNumber(order.total_amount)}`,
+      tags: (
+        <>
+          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(order.status)}`}>
+            {statusLabel(order.status)}
+          </span>
+          {order.credit_override ? (
+            <span className="rounded-full border border-[#f0cf86] bg-[#fff7df] px-3 py-1 text-xs font-bold text-[#8b6412]">
+              Credit override
+            </span>
+          ) : null}
+        </>
+      ),
+      tagText: `${statusLabel(order.status)}${order.credit_override ? " credit override" : ""}`,
+      searchKeys: [
+        dealerName,
+        order.id,
+        statusLabel(order.status),
+        ...(order.order_items ?? []).map((item) => item.product?.name ?? ""),
+        ...(order.order_items ?? []).map((item) => item.product?.sku ?? ""),
+      ],
+      body: (
+        <>
+          {credit ? (
+            <p className="rounded-2xl bg-[#f5f7f2] px-4 py-3 text-sm text-[#5d6b60]">
+              Exposure ₹{formatNumber(credit.exposure)} of ₹{formatNumber(credit.credit_limit)} · Available ₹
+              {formatNumber(credit.available_credit)}
+            </p>
+          ) : null}
+          {order.order_items?.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
+                  <tr>
+                    <th className="pb-3 pr-4 font-bold">Product</th>
+                    <th className="pb-3 pr-4 font-bold">Quantity</th>
+                    <th className="pb-3 pr-4 font-bold">Unit price</th>
+                    <th className="pb-3 font-bold">Line total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e8ede6]">
+                  {order.order_items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="py-3 pr-4">
+                        <p className="font-semibold">{item.product?.name ?? "Product"}</p>
+                        <p className="mt-1 text-xs text-[#819083]">{item.product?.sku}</p>
+                      </td>
+                      <td className="py-3 pr-4">{formatNumber(item.quantity)}</td>
+                      <td className="py-3 pr-4">₹{formatNumber(item.unit_price)}</td>
+                      <td className="py-3 font-semibold">₹{formatNumber(item.line_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState message="Order lines are not visible in current role scope." />
+          )}
+          <OrderActions orderId={order.id} role={profile.role} status={order.status} />
+          {canEdit && order.status === "pending" ? (
+            <OrderEditForm catalog={catalogs.get(order.dealer_id) ?? []} order={order} />
+          ) : null}
+        </>
+      ),
+    };
+  });
+
   return (
     <PortalShell
       description="Review order lines, credit exposure, approvals, overrides, escalation, and dispatch readiness."
       eyebrow="Sales management / order lifecycle"
+      highlights={[
+        "Search the queue by dealer, status, order reference or product",
+        "Open one order to see its lines, credit exposure and the actions you may take",
+        "Approve an order that fits inside your approval limit",
+        "Escalate an order to the director when it needs higher authority",
+        "Director approval or rejection for escalated orders",
+        "Raise a proxy order on behalf of a dealer",
+        "Edit dealer order lines before approval",
+        "Dispatch readiness: what is approved and ready to move",
+      ]}
       profile={profile}
       title="Keep orders moving."
     >
@@ -78,63 +173,20 @@ export default async function SalesOrdersPage() {
           </DataPanel>
         </div>
       ) : null}
-      <div className="mt-6 space-y-4">
-        {orders.length ? (
-          orders.map((order) => {
-            const credit = order.dealer_id ? exposureByDealer.get(order.dealer_id) : undefined;
-            return (
-              <DataPanel key={order.id} title={order.dealer?.name ?? "Dealer order"} description={`Created ${formatDate(order.created_at)} · ${order.order_items?.length ?? 0} line items`}>
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(order.status)}`}>{statusLabel(order.status)}</span>
-                    {order.credit_override ? <span className="rounded-full border border-[#f0cf86] bg-[#fff7df] px-3 py-1 text-xs font-bold text-[#8b6412]">Credit override</span> : null}
-                  </div>
-                  <p className="text-2xl font-semibold tracking-[-0.04em]">₹{formatNumber(order.total_amount)}</p>
-                </div>
-                {credit ? (
-                  <p className="mt-4 rounded-2xl bg-[#f5f7f2] px-4 py-3 text-sm text-[#5d6b60]">
-                    Exposure ₹{formatNumber(credit.exposure)} of ₹{formatNumber(credit.credit_limit)} · Available ₹{formatNumber(credit.available_credit)}
-                  </p>
-                ) : null}
-                {order.order_items?.length ? (
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="w-full min-w-[520px] text-left text-sm">
-                      <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
-                        <tr>
-                          <th className="pb-3 pr-4 font-bold">Product</th>
-                          <th className="pb-3 pr-4 font-bold">Quantity</th>
-                          <th className="pb-3 pr-4 font-bold">Unit price</th>
-                          <th className="pb-3 font-bold">Line total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#e8ede6]">
-                        {order.order_items.map((item) => (
-                          <tr key={item.id}>
-                            <td className="py-3 pr-4">
-                              <p className="font-semibold">{item.product?.name ?? "Product"}</p>
-                              <p className="mt-1 text-xs text-[#819083]">{item.product?.sku}</p>
-                            </td>
-                            <td className="py-3 pr-4">{formatNumber(item.quantity)}</td>
-                            <td className="py-3 pr-4">₹{formatNumber(item.unit_price)}</td>
-                            <td className="py-3 font-semibold">₹{formatNumber(item.line_total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EmptyState message="Order lines are not visible in current role scope." />
-                )}
-                <OrderActions orderId={order.id} role={profile.role} status={order.status} />
-                {canEdit && order.status === "pending" ? (
-                  <OrderEditForm catalog={catalogs.get(order.dealer_id) ?? []} order={order} />
-                ) : null}
-              </DataPanel>
-            );
-          })
-        ) : (
-          <DataPanel title="Order queue"><EmptyState message="No orders visible in current role scope." /></DataPanel>
-        )}
+      <div className="mt-6">
+        <DataPanel
+          description="One line per order. Search first, then open the order you mean — the lines, the credit behind it and the actions you may take appear only for that order."
+          title="Order queue"
+        >
+          <RecordPicker
+            collapseAfter={25}
+            emptyMessage="No orders visible in current role scope."
+            items={orderItems}
+            noMatchMessage="No order matches that."
+            placeholder="Search orders by dealer, status or product"
+            searchLabel="Search the order queue"
+          />
+        </DataPanel>
       </div>
     </PortalShell>
   );

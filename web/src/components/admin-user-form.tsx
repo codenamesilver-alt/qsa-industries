@@ -3,28 +3,39 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../lib/supabase/client";
-import type { UserDirectoryRow } from "../lib/data";
+import type { DesignationRow, UserDirectoryRow } from "../lib/data";
 
 type Props = {
   user: UserDirectoryRow;
   dealers: Array<{ id: string; name: string }>;
   managers: Array<{ id: string; full_name: string; role: string }>;
+  designations: DesignationRow[];
 };
 
 // One call changes the name, the role, the active flag, the dealer link and the
 // reporting line together. Splitting them into separate updates is what let the
 // profile and the hierarchy disagree, so admin_upsert_user_profile refuses to be
 // driven piecemeal and this form does not offer the option.
-export function AdminUserForm({ user, dealers, managers }: Props) {
+export function AdminUserForm({ user, dealers, managers, designations }: Props) {
   const router = useRouter();
   const [fullName, setFullName] = useState(user.full_name);
   const [role, setRole] = useState(user.role);
+  const [designationId, setDesignationId] = useState(user.designation_id ?? "");
+  const [phone, setPhone] = useState(user.phone ?? "");
   const [isActive, setIsActive] = useState(user.is_active);
   const [dealerId, setDealerId] = useState(user.dealer_id ?? "");
   const [managerId, setManagerId] = useState(user.manager_id ?? "");
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // The password reset is a second, separate call on purpose. admin_upsert_user_profile
+  // is the profile write, and mixing a credential change into it would mean a
+  // mistyped name field could silently invalidate somebody's login.
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordFailed, setPasswordFailed] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   // The hierarchy is three fixed levels deep, so the parent each role may name is
   // determined by the role rather than chosen freely. Offering every user as a
@@ -41,10 +52,42 @@ export function AdminUserForm({ user, dealers, managers }: Props) {
   // refused for and which the picker no longer shows. Deriving beats an effect
   // here because the invalid value never has to exist.
   const effectiveManagerId = eligibleManagers.some((manager) => manager.id === managerId) ? managerId : "";
+
+  // Blank is sent as null on both of these, so clearing a field in the UI clears the
+  // column rather than storing padding. The designation is a catalogue reference
+  // rather than free text as of 20261003100000, so there is nothing to mirror about its
+  // length here: the picker can only offer rows that exist.
+  const phoneTooLong = phone.trim().length > 32;
   const canSubmit =
     fullName.trim() !== "" &&
+    !phoneTooLong &&
     (wantedManagerRole === null || effectiveManagerId !== "") &&
     (role !== "dealer" || dealerId !== "");
+
+  const canResetPassword = newPassword.length >= 8;
+
+  async function handlePasswordReset() {
+    if (!canResetPassword || passwordLoading) return;
+    setPasswordMessage("");
+    setPasswordFailed(false);
+    setPasswordLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("admin_set_user_password", {
+      p_user_id: user.user_id,
+      p_password: newPassword,
+    });
+    setPasswordLoading(false);
+    if (error) {
+      setPasswordMessage(error.message);
+      setPasswordFailed(true);
+      return;
+    }
+    setNewPassword("");
+    setPasswordMessage(
+      "Password reset. Hand the new one over directly; it is not stored here and cannot be shown again.",
+    );
+    router.refresh();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,6 +103,8 @@ export function AdminUserForm({ user, dealers, managers }: Props) {
       p_is_active: isActive,
       p_dealer_id: role === "dealer" ? dealerId || null : null,
       p_manager_id: wantedManagerRole ? effectiveManagerId || null : null,
+      p_designation_id: designationId || null,
+      p_phone: phone.trim() || null,
     });
     setLoading(false);
     if (error) {
@@ -147,6 +192,39 @@ export function AdminUserForm({ user, dealers, managers }: Props) {
             ) : null}
           </label>
         ) : null}
+
+<label className="text-sm font-semibold text-[#334536]">
+          Job title
+          <select
+            className="mt-2 w-full rounded-xl border border-[#d6e1ce] bg-white px-3 py-2 text-sm font-normal"
+            onChange={(event) => setDesignationId(event.target.value)}
+            value={designationId}
+          >
+            <option value="">No job title yet</option>
+            {designations.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+                {entry.is_active ? "" : " · retired"}
+              </option>
+            ))}
+          </select>
+          <span className="mt-2 block text-xs font-normal text-[#718075]">
+            Optional, and chosen from the catalogue rather than typed. Shown under the name on the org
+            chart, separate from the role above.
+          </span>
+        </label>
+
+        <label className="text-sm font-semibold text-[#334536]">
+          Phone
+          <input
+            autoComplete="off"
+            className="mt-2 w-full rounded-xl border border-[#d6e1ce] px-3 py-2 text-sm font-normal"
+            inputMode="tel"
+            maxLength={32}
+            onChange={(event) => setPhone(event.target.value)}
+            value={phone}
+          />
+        </label>
       </div>
 
       <label className="flex items-center gap-2 text-sm text-[#334536]">
@@ -156,7 +234,9 @@ export function AdminUserForm({ user, dealers, managers }: Props) {
 
       <p className="text-xs text-[#5d6b60]">
         Suspending an account is refused while active accounts still report to it, and the last active admin
-        cannot be demoted. Account creation stays out of band: it needs the service role key.
+        cannot be demoted. A new login is made in{" "}
+        <span className="font-semibold text-[#4f6254]">Create a staff login</span> above, and changing an
+        existing password is a separate step below.
       </p>
 
       {message ? (
@@ -175,6 +255,40 @@ export function AdminUserForm({ user, dealers, managers }: Props) {
       >
         {loading ? "Saving…" : "Save user"}
       </button>
+
+      <div className="space-y-3 rounded-2xl border border-[#d6e1ce] p-4">
+        <p className="text-sm font-semibold text-[#334536]">Reset this person&rsquo;s password</p>
+        <label className="block text-sm font-semibold text-[#334536]">
+          New password
+          <input
+            autoComplete="new-password"
+            className="mt-2 w-full rounded-xl border border-[#d6e1ce] px-3 py-2 text-sm font-normal"
+            onChange={(event) => setNewPassword(event.target.value)}
+            type="password"
+            value={newPassword}
+          />
+          <span className="mt-2 block text-xs font-normal text-[#a33a2b]">
+            At least 8 characters. This replaces their current password immediately.
+          </span>
+        </label>
+        {passwordMessage ? (
+          <p
+            className={`rounded-2xl px-4 py-3 text-sm ${
+              passwordFailed ? "bg-[#fff0ed] text-[#a33a2b]" : "bg-[#eef6df] text-[#4e741d]"
+            }`}
+          >
+            {passwordMessage}
+          </p>
+        ) : null}
+        <button
+          className="rounded-2xl border border-[#15221b] px-5 py-2 text-sm font-bold text-[#15221b] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={passwordLoading || !canResetPassword}
+          onClick={handlePasswordReset}
+          type="button"
+        >
+          {passwordLoading ? "Resetting…" : "Reset password"}
+        </button>
+      </div>
     </form>
   );
 }

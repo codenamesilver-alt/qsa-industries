@@ -24,6 +24,12 @@ export default async function ProductionPage() {
     <PortalShell
       description="Log continuous feed production, quality status, and raw-material consumption against live stock."
       eyebrow="Internal operations / production"
+      highlights={[
+        "Record a production run against live raw-material stock",
+        "Log output quantity and the raw materials consumed for that run",
+        "Yield report by run date and by product",
+        "Update the QC status of a run, as admin or as the person who created it",
+      ]}
       profile={profile}
       title="Make every batch count."
     >
@@ -39,7 +45,7 @@ export default async function ProductionPage() {
         <DataPanel description="Output, raw-material input, and yield by run date and product." title="Yield report">
           {summary.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
+              <table className="w-full text-left text-sm">
                 <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
                   <tr>
                     <th className="pb-3 pr-4 font-bold">Date / product</th>

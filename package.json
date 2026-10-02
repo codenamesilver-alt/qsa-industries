@@ -16,7 +16,8 @@
     "db:restore-check": "node scripts/db-restore-check.mjs",
     "ui:smoke": "node scripts/ui-smoke.mjs",
     "ui:lifecycle": "node scripts/ui-lifecycle.mjs",
-    "test": "npm run db:test && npm run db:verify-fresh"
+    "test:org-layout": "node --no-warnings scripts/org-layout-test.mjs",
+    "test": "npm run test:org-layout && npm run db:test && npm run db:verify-fresh"
   },
   "devDependencies": {
     "pg": "^8.13.1",

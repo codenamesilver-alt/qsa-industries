@@ -22,6 +22,14 @@ export function PortalLogin({ portal }: { portal: Portal }) {
             {config.title}
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-8 text-[#5d6b60]">{config.description}</p>
+          <ul className="mt-8 max-w-md space-y-3">
+            {config.highlights.map((highlight) => (
+              <li className="flex gap-3 text-sm leading-6 text-[#334536]" key={highlight}>
+                <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#9db56a]" />
+                {highlight}
+              </li>
+            ))}
+          </ul>
           <p className="mt-8 max-w-md text-sm leading-6 text-[#718075]">
             Accounts are provisioned by QSA administration. Access follows your assigned role and reporting scope.
           </p>

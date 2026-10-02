@@ -8,14 +8,20 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:workbook": "tsx scripts/workbook-check.mts",
     "provision:user": "node scripts/provision-user.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.1",
+    "exceljs": "4.4.0",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8"
+  },
+  "//overrides": "exceljs 4.4.0 depends on uuid, and uuid below 11.1.1 carries GHSA-w5hq-g745-h8pq, a missing buffer bounds check in v3/v5/v6 when a buffer is supplied. npm's own suggested fix is to downgrade exceljs to 3.4.0, which is older rather than newer, so the override is the better direction. Verified: exceljs 4.4.0 writes and re-reads a workbook with uuid 11.1.1, and npm audit reports 0 vulnerabilities. The SheetJS package named xlsx was rejected for this same slot: it is frozen on npm at 0.18.5 with two high severity advisories and no fix available there.",
+  "overrides": {
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
@@ -26,6 +32,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "zod": "4.1.12"
   }

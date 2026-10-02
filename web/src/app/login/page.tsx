@@ -1,27 +1,19 @@
 import Link from "next/link";
+import { portalConfig, type Portal } from "../../lib/portal-config";
 
-const portals = [
-  {
-    href: "/login/internal",
-    title: "Internal operations",
-    description: "Production, inventory, logistics, finance, and administration.",
-    accent: "bg-[#15221b] text-[#d8f35b]",
-  },
-  {
-    href: "/login/sales",
-    title: "Sales management",
-    description: "Sales reps, managers, directors, dealers, and approvals.",
-    accent: "bg-[#e5efd9] text-[#4f6254]",
-  },
-  {
-    href: "/login/dealer",
-    title: "Dealer portal",
-    description: "Dealer profile, catalog pricing, orders, and account visibility.",
-    accent: "bg-[#d8f35b] text-[#15221b]",
-  },
-];
+// The chooser reads the same table the login screens and the role routing do,
+// rather than keeping its own copy of the three names and descriptions. It used
+// to, and the two had already drifted: this page described dealers as part of the
+// sales portal, which they are not, they have their own.
+const accents: Record<Portal, string> = {
+  internal: "bg-[#15221b] text-[#d8f35b]",
+  sales: "bg-[#e5efd9] text-[#4f6254]",
+  dealer: "bg-[#d8f35b] text-[#15221b]",
+};
 
 export default function LoginPage() {
+  const portals = Object.entries(portalConfig) as Array<[Portal, (typeof portalConfig)[Portal]]>;
+
   return (
     <main className="min-h-screen bg-[#f5f7f2] px-5 py-8 text-[#15221b] sm:px-8">
       <div className="mx-auto max-w-6xl">
@@ -41,17 +33,17 @@ export default function LoginPage() {
           </p>
         </section>
         <section className="grid gap-5 md:grid-cols-3">
-          {portals.map((portal) => (
+          {portals.map(([portal, config]) => (
             <Link
               className="group rounded-[2rem] border border-[#dfe6dc] bg-white p-7 transition hover:-translate-y-1 hover:shadow-[0_24px_70px_rgba(21,34,27,0.1)]"
-              href={portal.href}
-              key={portal.href}
+              href={`/login/${portal}`}
+              key={portal}
             >
-              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${portal.accent}`}>
+              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${accents[portal]}`}>
                 Secure portal
               </span>
-              <h2 className="mt-16 text-2xl font-semibold tracking-[-0.04em]">{portal.title}</h2>
-              <p className="mt-3 text-sm leading-6 text-[#718075]">{portal.description}</p>
+              <h2 className="mt-16 text-2xl font-semibold tracking-[-0.04em]">{config.title}</h2>
+              <p className="mt-3 text-sm leading-6 text-[#718075]">{config.description}</p>
               <span className="mt-8 block text-sm font-bold text-[#4f6254] group-hover:text-[#15221b]">
                 Continue →
               </span>

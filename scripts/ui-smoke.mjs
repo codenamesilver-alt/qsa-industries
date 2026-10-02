@@ -37,8 +37,20 @@ const INTERNAL = [
   "/internal/delivery",
   "/internal/finance",
   "/internal/admin",
+  // Listed separately from the admin master because the two pages are gated by
+  // the same role and do different jobs: the master is the catalogue of every
+  // dealer fact, this is the queue of dealers who cannot trade yet. A route the
+  // admin nav offers and this matrix never visits is the gap the matrix exists to
+  // close, and a role that gains the nav link without the page guard would show up
+  // here as a refusal rather than as a silent gap.
+  "/internal/admin/dealers",
 ];
+// /sales/team is deliberately not in SALES. It is gated to sales_manager alone,
+// so adding it here would hand every rep and every director a refusal on a route
+// that is refused by design, and the smoke would then be asserting the refusal
+// rather than the screen. The manager entry below lists it explicitly.
 const SALES = ["/sales", "/sales/orders", "/sales/reports"];
+const SALES_TEAM = [...SALES, "/sales/team"];
 const DEALER = ["/dealer", "/dealer/catalog", "/dealer/orders"];
 
 // `routes` must render the role's own pages; `denied` must bounce to
@@ -65,7 +77,7 @@ const ACCOUNTS = [
     // Dispatch and delivery are both logistics questions, and the admin screen is
     // an admin one. Refusing them here is what stops a later role change from
     // quietly widening a role nobody intended to widen.
-    denied: ["/internal/orders", "/internal/delivery", "/internal/finance", "/internal/admin", "/sales/reports"],
+    denied: ["/internal/orders", "/internal/delivery", "/internal/finance", "/internal/admin", "/internal/admin/dealers", "/sales/reports"],
   },
   {
     role: "inventory_manager",
@@ -79,6 +91,7 @@ const ACCOUNTS = [
       "/internal/delivery",
       "/internal/finance",
       "/internal/admin",
+      "/internal/admin/dealers",
       "/sales/reports",
     ],
   },
@@ -98,6 +111,7 @@ const ACCOUNTS = [
       "/internal/delivery",
       "/internal/finance",
       "/internal/admin",
+      "/internal/admin/dealers",
       "/sales",
       "/sales/reports",
       "/dealer",
@@ -120,6 +134,7 @@ const ACCOUNTS = [
       "/internal/quality",
       "/internal/finance",
       "/internal/admin",
+      "/internal/admin/dealers",
     ],
   },
   {
@@ -138,34 +153,46 @@ const ACCOUNTS = [
       "/internal/orders",
       "/internal/delivery",
       "/internal/admin",
+      "/internal/admin/dealers",
     ],
   },
-  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"], content: { "/sales/orders": [/Proxy order/] } },
+  // A rep and a director are both refused /sales/team. A rep has no team to
+  // reassign; a director assigns across managers by a different rule. Both are
+  // refused on purpose rather than shown an empty screen, so the refusal is
+  // asserted for each of them separately.
+  { role: "sales_rep", portal: "sales", email: "ravi.menon@qsa-demo.in", routes: SALES, denied: ["/internal", "/internal/delivery", "/internal/admin", "/internal/admin/dealers", "/dealer", "/sales/team"], content: { "/sales/orders": [/Proxy order/] } },
   {
     role: "sales_manager",
     portal: "sales",
     email: "meera.nair@qsa-demo.in",
-    routes: SALES,
+    routes: SALES_TEAM,
     // The two new screens are listed by their own paths, not only through
     // /internal. A role gate on the parent would refuse a sales user today, but
     // only the leaf routes prove the gate on each page rather than on the layout
     // that happens to wrap it.
-    denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"],
+    denied: ["/internal", "/internal/delivery", "/internal/admin", "/internal/admin/dealers", "/dealer"],
     // create_dealer_order accepts a dealer only for the dealer itself, a mapped
     // sales rep, or an admin. A manager reaching the proxy form would only ever
     // get an error back, so the panel must not be offered to them at all.
     absent: { "/sales/orders": [/Proxy order/] },
     // The reporting screen must show a manager their team's regions, not only
-    // their own. A single-dealer manager would still pass a bare 200 check, so the
-    // panel heading is asserted to be present.
-    content: { "/sales/reports": [/Sales trend by period/] },
+    // their own. A single-dealer manager would still pass a bare 200 check, so
+    // the panel heading is asserted to be present.
+    content: {
+      "/sales/reports": [/Sales trend by period/],
+      // /sales/team is the only screen that proves the manager can reassign a
+      // dealer. "Reassign a dealer" is the panel that carries the form, so its
+      // absence means the RPC or the coverage view is broken and the page
+      // rendered without the control it exists for.
+      "/sales/team": [/Reassign a dealer/, /Coverage by rep/, /Dealer accounts/],
+    },
   },
   {
     role: "sales_director",
     portal: "sales",
     email: "nadia.kapoor@qsa-demo.in",
     routes: SALES,
-    denied: ["/internal", "/internal/delivery", "/internal/admin", "/dealer"],
+    denied: ["/internal", "/internal/delivery", "/internal/admin", "/internal/admin/dealers", "/dealer", "/sales/team"],
     absent: { "/sales/orders": [/Proxy order/] },
     content: { "/sales/reports": [/Sales trend by period/] },
   },
@@ -177,7 +204,7 @@ const ACCOUNTS = [
     // A dealer must not reach the delivery board either. The board is
     // security_invoker on orders, so a dealer would see their own consignments if
     // the route gate were the only control; the route gate is the control.
-    denied: ["/internal", "/internal/finance", "/internal/delivery", "/internal/admin", "/sales", "/sales/reports"],
+    denied: ["/internal", "/internal/finance", "/internal/delivery", "/internal/admin", "/internal/admin/dealers", "/sales", "/sales/reports"],
   },
 ];
 
@@ -214,6 +241,13 @@ const CONTENT = {
   // heading alone is enough to prove the page is the admin one and not an
   // unauthorized redirect that happens to carry the word "admin".
   "/internal/admin": [/Create a product/, /Price list/, /Users, roles and reporting lines/],
+  // The onboarding queue. Asserted on the two halves of the page rather than on
+  // one heading: "Start an onboarding" proves the create form rendered, and the
+  // metrics prove the read model answered, so a page that rendered the heading
+  // with a broken board would still fail here. A dealer name is deliberately not
+  // asserted, because the queue is empty on a fresh database and the smoke has to
+  // pass on one.
+  "/internal/admin/dealers": [/Onboard a dealer/, /Start an onboarding/, /Open onboardings/, /Onboarding queue/],
   "/sales": [/Orders tracked/],
   "/sales/orders": [/Exposure/],
   "/dealer": [/Coastal Agri Enterprises/],

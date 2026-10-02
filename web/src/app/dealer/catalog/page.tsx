@@ -15,6 +15,11 @@ export default async function DealerCatalogPage() {
     <PortalShell
       description="Browse live stock, use dealer pricing, and submit an order for sales review."
       eyebrow="Dealer portal / catalog"
+      highlights={[
+        "Live catalog of sellable products with your dealer price and pack size",
+        "Sellable quantity that already excludes expired batches",
+        "Submit an order basket for sales review, then track it through Orders",
+      ]}
       profile={profile}
       title="Build your next order."
     >

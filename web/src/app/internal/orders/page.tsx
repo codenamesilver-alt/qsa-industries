@@ -17,6 +17,11 @@ export default async function DispatchQueuePage() {
     <PortalShell
       description="Review approved orders, record dispatch dates, and keep dealer status progression current."
       eyebrow="Internal operations / dispatch"
+      highlights={[
+        "Approved orders only: an order appears here once it clears approval",
+        "Mark an order dispatched with a dispatch date",
+        "Dispatched history with delivery dates and tracking notes",
+      ]}
       profile={profile}
       title="Move product forward."
     >

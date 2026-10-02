@@ -30,6 +30,11 @@ export default async function QualityPage() {
     <PortalShell
       description="Clear the quality queue. A passed verdict is what releases finished goods into sellable stock, and it is final once recorded."
       eyebrow="Internal operations / quality"
+      highlights={[
+        "Record a QC verdict of pass, hold or fail on a production run, with a note on any failure",
+        "Quality queue of runs still waiting on a verdict, worst yield first",
+        "Materials in scope, so you know what each run consumed",
+      ]}
       profile={profile}
       title="Clear the quality queue."
     >
@@ -57,7 +62,7 @@ export default async function QualityPage() {
         <DataPanel description="Every run visible to your role, newest first." title="Quality queue">
           {runs.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left text-sm">
+              <table className="w-full text-left text-sm">
                 <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
                   <tr>
                     <th className="pb-3 pr-4 font-bold">Run</th>

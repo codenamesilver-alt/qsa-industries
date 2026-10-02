@@ -16,6 +16,11 @@ export default async function DealerPortalPage() {
     <PortalShell
       description="A focused dealer workspace for account details, catalog pricing, orders, and delivery visibility."
       eyebrow="Dealer portal"
+      highlights={[
+        "Your open-order count, live invoice balance and available credit at a glance",
+        "Credit limit, outstanding invoices and available credit, straight from the finance ledger",
+        "Your latest orders with value, line count and current lifecycle status",
+      ]}
       profile={profile}
       title="Order with clarity."
     >

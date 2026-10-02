@@ -1,6 +1,9 @@
-import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
+import { MetricCard } from "../../../components/data-panel";
 import { DeliveryConfirmForm } from "../../../components/delivery-confirm-form";
+import { DeliveredList, ReadyToDispatch } from "../../../components/delivery-lists";
+import { CollapsiblePanel, PanelStack } from "../../../components/panel-stack";
 import { PortalShell } from "../../../components/portal-shell";
+import { RecordPicker, type PickerItem } from "../../../components/record-picker";
 import { requireProfile } from "../../../lib/auth";
 import { getDeliveryBoard } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
@@ -13,6 +16,12 @@ const roles = ["admin", "logistics"] as const;
 // not. delivery_board takes the label from private.dealer_display_name instead, so
 // the one role that has to act on every consignment in the country sees the whole
 // board rather than an empty page.
+//
+// The three lists are treated differently because they are not the same shape. The one
+// carrying a confirmation form is a RecordPicker: one line per consignment, one open
+// at a time, because the form is the work. The other two are read-only, so they get a
+// search box and a row cap instead. Together that took the board from about 15,000
+// pixels to a scannable list.
 export default async function DeliveryPage() {
   const profile = await requireProfile(roles);
   const board = await getDeliveryBoard();
@@ -21,10 +30,55 @@ export default async function DeliveryPage() {
   const inTransit = board.filter((row) => row.delivery_status === "in_transit");
   const delivered = board.filter((row) => row.delivery_status === "delivered");
 
+  const confirmItems: PickerItem[] = inTransit.map((row) => {
+    const days = Number(row.days_in_transit ?? 0);
+    const age = days > 0 ? `${days} days on the road` : days < 0 ? `dispatched ${Math.abs(days)} days ahead` : "dispatched today";
+
+    return {
+      id: row.order_id,
+      summary: row.dealer_name ?? "Dealer",
+      detail: `${row.order_reference} · ${formatDate(row.dispatch_date)} · ${age}`,
+      tags: (
+        <>
+          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(row.status)}`}>
+            {statusLabel(row.status)}
+          </span>
+          <span className="rounded-full border border-[#a9d3db] bg-[#e8f7f8] px-3 py-1 text-xs font-bold text-[#276c76]">
+            {statusLabel(row.delivery_status)}
+          </span>
+        </>
+      ),
+      tagText: `${statusLabel(row.status)} ${statusLabel(row.delivery_status)} ${age}`,
+      searchKeys: [
+        row.dealer_name ?? "",
+        row.order_reference,
+        row.tracking_note ?? "",
+        formatNumber(row.total_amount),
+        age,
+      ],
+      body: (
+        <>
+          <p className="rounded-2xl bg-[#f5f7f2] px-4 py-3 text-sm font-semibold text-[#4f6254]">
+            ₹{formatNumber(row.total_amount)} · dispatched {formatDate(row.dispatch_date)}
+          </p>
+          {row.tracking_note ? <p className="mt-3 text-sm text-[#5d6b60]">{row.tracking_note}</p> : null}
+          <div className="mt-5">
+            <DeliveryConfirmForm orderId={row.order_id} orderReference={row.order_reference} />
+          </div>
+        </>
+      ),
+    };
+  });
+
   return (
     <PortalShell
       description="Every consignment logistics still has to move, with the day count that decides which one to chase first."
       eyebrow="Internal operations / delivery"
+      highlights={[
+        "Orders waiting for a delivery confirmation after dispatch",
+        "Confirm delivery with a note against a dispatched order",
+        "Delivered history, with the confirmation note behind each delivery",
+      ]}
       profile={profile}
       title="Know where every consignment is."
     >
@@ -34,99 +88,42 @@ export default async function DeliveryPage() {
         <MetricCard detail="Receipt confirmed by logistics" label="Delivered" value={String(delivered.length).padStart(2, "0")} />
       </section>
 
-      <div className="mt-6">
-        <DataPanel
-          description="A delivery can only be confirmed against a dispatched consignment, so this list is the one place the button is offered."
-          title="Awaiting delivery confirmation"
-        >
-          {inTransit.length ? (
-            <div className="space-y-4">
-              {inTransit.map((row) => (
-                <div className="rounded-2xl border border-[#e8ede6] p-5" key={row.order_id}>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="font-semibold">{row.dealer_name ?? "Dealer"}</p>
-                      <p className="mt-1 text-xs text-[#819083]">
-                        {row.order_reference} · dispatched {formatDate(row.dispatch_date)} · ₹
-                        {formatNumber(row.total_amount)}
-                      </p>
-                      <p className="mt-1 text-xs text-[#819083]">
-                        {Number(row.days_in_transit ?? 0) > 0
-                          ? `${row.days_in_transit} days on the road`
-                          : Number(row.days_in_transit ?? 0) < 0
-                            ? `Dispatched ${Math.abs(Number(row.days_in_transit))} days ahead`
-                            : "Dispatched today"}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(row.status)}`}>
-                        {statusLabel(row.status)}
-                      </span>
-                      <span className="rounded-full border border-[#a9d3db] bg-[#e8f7f8] px-3 py-1 text-xs font-bold text-[#276c76]">
-                        {statusLabel(row.delivery_status)}
-                      </span>
-                    </div>
-                  </div>
-                  {row.tracking_note ? <p className="mt-3 text-sm text-[#5d6b60]">{row.tracking_note}</p> : null}
-                  <div className="mt-5">
-                    <DeliveryConfirmForm orderId={row.order_id} orderReference={row.order_reference} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState message="No consignment is waiting on a delivery confirmation." />
-          )}
-        </DataPanel>
-      </div>
+      <div className="mt-6 space-y-6">
+        <PanelStack defaultOpenId="confirm">
+          <CollapsiblePanel
+            description="A delivery can only be confirmed against a dispatched consignment, so this list is the one place the button is offered. Search, then open the consignment you mean."
+            id="confirm"
+            summary={`${inTransit.length} in transit`}
+            title="Awaiting delivery confirmation"
+          >
+            <RecordPicker
+              collapseAfter={15}
+              emptyMessage="No consignment is waiting on a delivery confirmation."
+              items={confirmItems}
+              noMatchMessage="No consignment matches that. Try a dealer, a reference or a tracking note."
+              placeholder="Search by dealer, reference or tracking note"
+              searchLabel="Search consignments awaiting confirmation"
+            />
+          </CollapsiblePanel>
 
-      <div className="mt-6">
-        <DataPanel description="Approved orders, which dispatch from the dispatch queue before they can be delivered." title="Ready to dispatch">
-          {readyToDispatch.length ? (
-            <div className="divide-y divide-[#e8ede6]">
-              {readyToDispatch.map((row) => (
-                <div className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0 last:pb-0" key={row.order_id}>
-                  <div>
-                    <p className="font-semibold">{row.dealer_name ?? "Dealer"}</p>
-                    <p className="mt-1 text-xs text-[#819083]">
-                      {row.order_reference} · ₹{formatNumber(row.total_amount)}
-                    </p>
-                  </div>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(row.status)}`}>
-                    {statusLabel(row.status)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState message="No approved order is waiting for a vehicle." />
-          )}
-        </DataPanel>
-      </div>
+          <CollapsiblePanel
+            description="Approved orders, which dispatch from the dispatch queue before they can be delivered."
+            id="ready"
+            summary={`${readyToDispatch.length} approved`}
+            title="Ready to dispatch"
+          >
+            <ReadyToDispatch rows={readyToDispatch} />
+          </CollapsiblePanel>
 
-      <div className="mt-6">
-        <DataPanel description="Receipt confirmed, with the note left at the time." title="Delivered">
-          {delivered.length ? (
-            <div className="divide-y divide-[#e8ede6]">
-              {delivered.map((row) => (
-                <div className="flex flex-wrap items-start justify-between gap-4 py-4 first:pt-0 last:pb-0" key={row.order_id}>
-                  <div>
-                    <p className="font-semibold">{row.dealer_name ?? "Dealer"}</p>
-                    <p className="mt-1 text-xs text-[#819083]">
-                      {row.order_reference} · confirmed {formatDate(row.delivered_at)}
-                    </p>
-                    {row.delivery_note ? <p className="mt-2 text-sm text-[#5d6b60]">{row.delivery_note}</p> : null}
-                  </div>
-                  <span className="rounded-full border border-[#b9d98a] bg-[#eff8df] px-3 py-1 text-xs font-bold text-[#4e741d]">
-                    {statusLabel(row.delivery_status)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState message="No delivery has been confirmed yet." />
-          )}
-        </DataPanel>
+          <CollapsiblePanel
+            description="Receipt confirmed, with the note left at the time."
+            id="delivered"
+            summary={`${delivered.length} delivered`}
+            title="Delivered"
+          >
+            <DeliveredList rows={delivered} />
+          </CollapsiblePanel>
+        </PanelStack>
       </div>
     </PortalShell>
   );

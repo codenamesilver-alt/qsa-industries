@@ -9,6 +9,9 @@ export function GenerateInvoiceButton({ orderId }: { orderId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  // Success and failure shared one red element, so a generated invoice was
+  // displayed as a failure. Track which one this is instead.
+  const [failed, setFailed] = useState(false);
 
   async function generateInvoice() {
     setLoading(true);
@@ -17,9 +20,11 @@ export function GenerateInvoiceButton({ orderId }: { orderId: string }) {
     const { error } = await supabase.rpc("generate_invoice", { target_order_id: orderId });
     setLoading(false);
     if (error) {
+      setFailed(true);
       setMessage(error.message);
       return;
     }
+    setFailed(false);
     setMessage("Invoice generated.");
     router.refresh();
   }
@@ -34,7 +39,9 @@ export function GenerateInvoiceButton({ orderId }: { orderId: string }) {
       >
         {loading ? "Generating…" : "Generate invoice"}
       </button>
-      {message ? <p className="mt-2 max-w-xs text-xs text-[#a33a2b]">{message}</p> : null}
+      {message ? (
+        <p className={`mt-2 max-w-xs text-xs ${failed ? "text-[#a33a2b]" : "text-[#4e741d]"}`}>{message}</p>
+      ) : null}
     </div>
   );
 }
@@ -46,12 +53,14 @@ export function DealerPaymentForm({ dealerId }: { dealerId: string }) {
   const [reference, setReference] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const amountValue = Number(amount);
   const amountValid = amount.trim() !== "" && Number.isFinite(amountValue) && amountValue > 0;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!amountValid) {
+      setFailed(true);
       setMessage("Enter a positive payment amount.");
       return;
     }
@@ -67,11 +76,13 @@ export function DealerPaymentForm({ dealerId }: { dealerId: string }) {
     });
     setLoading(false);
     if (error) {
+      setFailed(true);
       setMessage(error.message);
       return;
     }
     setAmount("");
     setReference("");
+    setFailed(false);
     setMessage("Dealer payment recorded.");
     router.refresh();
   }
@@ -104,7 +115,9 @@ export function DealerPaymentForm({ dealerId }: { dealerId: string }) {
       <button className="rounded-xl bg-[#eef6df] px-3 py-2 text-xs font-bold text-[#4e741d] disabled:opacity-60" disabled={loading || !amountValid} type="submit">
         {loading ? "Saving…" : "Record"}
       </button>
-      {message ? <p className="text-xs text-[#a33a2b] md:col-span-4">{message}</p> : null}
+      {message ? (
+        <p className={`text-xs md:col-span-4 ${failed ? "text-[#a33a2b]" : "text-[#4e741d]"}`}>{message}</p>
+      ) : null}
     </form>
   );
 }
@@ -116,12 +129,14 @@ export function PaymentForm({ invoiceId }: { invoiceId: string }) {
   const [reference, setReference] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const amountValue = Number(amount);
   const amountValid = amount.trim() !== "" && Number.isFinite(amountValue) && amountValue > 0;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!amountValid) {
+      setFailed(true);
       setMessage("Enter a positive payment amount.");
       return;
     }
@@ -137,11 +152,13 @@ export function PaymentForm({ invoiceId }: { invoiceId: string }) {
     });
     setLoading(false);
     if (error) {
+      setFailed(true);
       setMessage(error.message);
       return;
     }
     setAmount("");
     setReference("");
+    setFailed(false);
     setMessage("Payment recorded.");
     router.refresh();
   }
@@ -174,7 +191,9 @@ export function PaymentForm({ invoiceId }: { invoiceId: string }) {
       <button className="rounded-xl bg-[#eef6df] px-3 py-2 text-xs font-bold text-[#4e741d] disabled:opacity-60" disabled={loading || !amountValid} type="submit">
         {loading ? "Saving…" : "Record"}
       </button>
-      {message ? <p className="text-xs text-[#a33a2b] md:col-span-4">{message}</p> : null}
+      {message ? (
+        <p className={`text-xs md:col-span-4 ${failed ? "text-[#a33a2b]" : "text-[#4e741d]"}`}>{message}</p>
+      ) : null}
     </form>
   );
 }

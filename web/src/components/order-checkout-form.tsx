@@ -49,7 +49,7 @@ export function OrderCheckoutForm({ catalog }: { catalog: DealerCatalogRow[] }) 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
+        <table className="w-full text-left text-sm">
           <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">
             <tr>
               <th className="pb-3 pr-4 font-bold">Product</th>

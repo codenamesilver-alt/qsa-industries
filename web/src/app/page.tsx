@@ -39,11 +39,23 @@ const schemaTables = [
   },
 ];
 
-const nextSteps = [
-  "Apply remaining migrations to the remote project",
-  "Run RLS and workflow tests against PostgreSQL",
-  "Provision role accounts and validate every portal",
+// What the system does, not what is planned. The to-do list this replaced named
+// work that finished long ago, which is worse on a public page than saying nothing.
+const capabilities = [
+  "Role-aware internal operations: production, stock, quality, dispatch and finance",
+  "Sales management with rep coverage, approvals and credit exposure",
+  "A dealer portal with live catalog, dealer pricing and orders",
+  "Reporting, Tally export and a drawn organization chart",
 ];
+
+// Kept in step with the repository by hand, because this is a public page and RLS
+// denies anon reads, so the numbers cannot be read live. The counts behind them are
+// what npm test asserts: 58 migration files, 17 pgTAP suites, 947 assertions.
+const verified = {
+  migrations: 58,
+  suites: 17,
+  assertions: 947,
+};
 
 function QsaMark() {
   return (
@@ -103,8 +115,8 @@ export default function Home() {
               Portal sign in
             </Link>
             <div className="flex items-center gap-2 rounded-full border border-[#d6e1ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#4f6254]">
-              <span className="h-2 w-2 rounded-full bg-[#7bb51d]" />
-               Stage 10 local build
+<span className="h-2 w-2 rounded-full bg-[#7bb51d]" />
+               Supabase project connected
             </div>
           </div>
         </header>
@@ -135,8 +147,8 @@ export default function Home() {
               </span>
             </div>
             <p className="mt-5 leading-7 text-[#c4d0c5]">
-               Ten-stage ERP model is authored locally with inventory, production, orders, credit,
-               dispatch, invoicing, reporting, and Tally export workflows.
+               Production, inventory, sales, credit, dispatch, invoicing, reporting and Tally
+               export, on one role-aware data model.
             </p>
             <div className="mt-7 flex items-center gap-2 border-t border-white/15 pt-5 text-sm text-[#d5dfd5]">
               <span className="h-2 w-2 rounded-full bg-[#d8f35b]" />
@@ -178,25 +190,25 @@ export default function Home() {
           </div>
 
           <div className="rounded-[2rem] bg-[#e5efd9] p-6 sm:p-8">
-             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#6f8c3b]">Next build stage</p>
+             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#6f8c3b]">What it does</p>
              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.045em]">Operational control.</h2>
              <p className="mt-5 leading-7 text-[#5d6b60]">
-               Role-aware workflows now connect production, stock, sales, credit, dispatch, finance,
+               Role-aware workflows connect production, stock, sales, credit, dispatch, finance,
                reporting, and exports through one operational model.
              </p>
             <ul className="mt-7 space-y-4">
-              {nextSteps.map((step, index) => (
-                <li key={step} className="flex gap-3 text-sm font-medium text-[#334536]">
+              {capabilities.map((capability, index) => (
+                <li key={capability} className="flex gap-3 text-sm font-medium text-[#334536]">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#15221b] text-xs font-bold text-[#d8f35b]">
                     {index + 1}
                   </span>
-                  {step}
+                  {capability}
                 </li>
               ))}
             </ul>
             <div className="mt-8 flex items-center gap-2 border-t border-[#cbdab9] pt-5 text-sm font-semibold text-[#4c624d]">
               <span className="h-2 w-2 rounded-full bg-[#7bb51d]" />
-                Stage 10 of 10 live · 18 migrations applied · 5 pgTAP suites green
+              {verified.migrations} migrations · {verified.suites} pgTAP suites · {verified.assertions} assertions green
             </div>
           </div>
         </section>

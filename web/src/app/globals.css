@@ -24,3 +24,78 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* No sideways scrolling on the page itself. Tables used to carry a fixed
+   min-width so wide ledgers stayed legible and scrolled inside their own
+   container; they now fit their container instead, and long unbroken values
+   (emails, batch codes, free-text reasons) wrap rather than pushing the layout.
+   overflow-x: clip is used rather than hidden because hidden would make this
+   element a scroll container and break the sticky sidebar. */
+html {
+  overflow-x: clip;
+}
+
+.overflow-x-auto th,
+.overflow-x-auto td {
+  overflow-wrap: anywhere;
+}
+
+/* Printing. The PDF export is the browser's print dialog, so these rules are the
+   whole of the PDF layout. Three jobs, in order of how much they matter:
+   keep the figures, drop the furniture, and stop the page breaking a table row in
+   half. */
+@media print {
+  /* White paper, black ink. The screen palette is built for a backlit display;
+     printed as-is it wastes toner and the muted greys wash out. */
+  html,
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  /* Everything interactive is dropped, so nothing that chose the view is printed
+     alongside the view: the portal nav, the sign out button, and any date inputs.
+     The header keeps its title, because a printed page with no title cannot be
+     filed. No !important here, so a component that genuinely needs to appear on
+     paper can say so with the print: utility of its choice. */
+  button,
+  input,
+  select,
+  textarea,
+  nav {
+    display: none;
+  }
+
+  /* Links are navigation almost everywhere in this portal, so they print as their
+     own text with no underline and no colour. The report tables contain no links
+     at all, so nothing meaningful is lost. */
+  a {
+    color: #000;
+    text-decoration: none;
+  }
+
+  /* Keep each table row whole. Without this a row's dealer name lands at the foot
+     of one page and its figures at the head of the next. */
+  tr,
+  thead {
+    break-inside: avoid;
+  }
+
+  /* Repeating the header on every page of a long dealer book, which is the entire
+     point of a table that continues overleaf. */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-row-group;
+  }
+
+  /* The dealer book scrolls horizontally on screen. Printed, it gets the full
+     sheet width instead, since a print stylesheet cannot add a page and a table
+     clipped at the right margin is worse than a small font. */
+  .overflow-x-auto {
+    overflow: visible;
+  }
+}
+

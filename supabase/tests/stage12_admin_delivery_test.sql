@@ -622,7 +622,7 @@ select throws_ok(
     'ffffffff-ffff-4fff-8fff-ffffffffffff', 'Nobody', 'sales_rep', true, null,
     '10000000-0000-4000-8000-000000000004'
   )$$,
-  'No user with that id. Accounts are created out of band; this function changes an account that already exists.',
+  'No user with that id. Use admin_create_user_account to make an account, or this function to change one that already exists.',
   'changing a user that does not exist is refused, and the message says where accounts come from'
 );
 
@@ -966,8 +966,12 @@ select throws_ok(
   'a delivery cannot precede a dispatch, even for logistics'
 );
 
+-- The dispatch date is left to the function default on purpose. The delivery
+-- board measures transit against private.business_date() (Asia/Kolkata), so
+-- passing current_date here would disagree with it for the five and a half
+-- hours a day when the UTC date and the business date differ.
 select lives_ok(
-  $$select public.dispatch_order((select order_id from admin_ids), current_date, 'probe load')$$,
+  $$select public.dispatch_order((select order_id from admin_ids), private.business_date(), 'probe load')$$,
   'logistics dispatches the order'
 );
 

@@ -14,6 +14,7 @@ Supabase, with all schema and seed data expressed as migrations in
 | `web/` | Next.js application (App Router) |
 | `supabase/migrations/` | Schema, functions, RLS, and dev seed data, in order |
 | `supabase/tests/` | pgTAP suites, one file per stage |
+| `supabase/functions/` | Edge functions, the only code that holds the service role key |
 | `scripts/` | Database migration, test, audit, backup and cleanup tooling, plus the browser tests |
 | `deployment/` | PM2 process definition, Nginx config, and the deploy script |
 | `docs/` | Build plan, Tally export mapping, and design notes |
@@ -345,6 +346,74 @@ month is invisible on the admin screen while the catalogue still computes agains
 it. That is inherited from the 20260926 schema and is a real gap in the admin
 view.
 
+## Dealer onboarding
+
+`/internal/admin/dealers`, admin only. A separate route from `/internal/admin`
+because it answers a different question: not "what is true about this account now"
+but "what is between this dealer and trading". The master page is long and mostly
+catalogue; this is a short queue of five actions per dealer.
+
+Creating a dealer here does not create a trading dealer.
+`admin_start_dealer_onboarding` writes the dealer `inactive`, with
+`credit_limit = 0` and no sales rep, and opens a `dealer_onboardings` record in the
+same call. A requested limit is not a granted one, so it is recorded on the
+onboarding record and copied onto `dealers.credit_limit` only by
+`admin_activate_dealer`. That is the only path by which a newly onboarded dealer
+gets a limit.
+
+There is deliberately no `stage` column. `dealer_onboarding_board` derives the
+stage from the recorded facts, so the answer cannot drift from the columns it was
+computed from, and `outstanding` names what is still missing in the order the
+flow runs. A dealer with no onboarding record is absent from the board, which
+means "trading since before onboarding existed" and is read from the dealer
+master instead.
+
+Four refusals are load bearing and each has a reason in the migration:
+
+- An **unmapped dealer cannot be activated.** `create_dealer_order` reads
+  `dealers.sales_rep_id` into a `not null` `orders.sales_rep_id`, so an unmapped
+  live account could never be ordered for, including from its own portal.
+- **Credit refusal is not a closure.** A refusal is a decision about a number and
+  leaves the record open for a different figure. `admin_decline_dealer_onboarding`
+  is the separate act that finishes a record, and the two live in different
+  columns for exactly that reason.
+- **A request cannot be edited after a decision.** Otherwise an approved figure
+  ends up attached to a request nobody saw. Re-deciding is the way back.
+- **Claiming an unassigned dealer stays an admin act.** `can_view_dealer` is
+  false for a null `sales_rep_id`, so an unowned dealer is invisible to every
+  manager. A manager sees the count and asks for it; a manager does not take it.
+
+Rep mapping has two writers with different scopes, and the difference is not an
+oversight. `sales_assign_dealer_to_rep` is a manager moving a dealer between two
+reps inside their own team, and it refuses a null target, because clearing a
+mapping takes the dealer out of every manager's reach. `admin_map_dealer_to_rep`
+is the admin path from the onboarding board, changes one column and nothing else,
+and does allow null.
+
+### The login edge function
+
+`supabase/functions/provision-dealer-login` is the only code in the repository
+that holds the service role key. It is needed because creating an `auth.users` row
+goes through the Auth admin API, and that key must never reach a browser.
+
+The function is not a security boundary and does not need to be. It reads the
+caller's role from `public.users` and refuses a non-admin before writing anything,
+and then calls `public.admin_link_dealer_login`, which is granted to `service_role`
+alone and re-reads the caller id out of `public.users` and refuses again. A future
+edit that removed the check in the edge runtime would still be refused by the
+database.
+
+Deploy it with exactly one secret, set as an edge function secret and never
+committed:
+
+```bash
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<key>   # or set it in the dashboard
+supabase functions deploy provision-dealer-login
+```
+
+Until it is deployed, `admin_activate_dealer` cannot be satisfied from the browser,
+because its login precondition is only reachable through it.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs two jobs on every push and pull request:
@@ -518,6 +587,85 @@ Periods are calendar months in `Asia/Kolkata`, matching the convention
 `sales_daily` already set. Grouping a `timestamptz` on UTC boundaries would split
 the first of each month for anything booked after 05:30, which is most of a
 working day here.
+
+### Date ranges and export
+
+The four views above are all-time aggregates, and a view cannot take a parameter.
+A date range could not be applied to this report by filtering the views: three of
+the four have already summed orders into one row per group, so a window cannot be
+recovered from them afterwards. `20260928105000_sales_report_date_range.sql` adds
+four functions that apply the range where the rows are still order level:
+
+| Function | Replaces | For |
+| --- | --- | --- |
+| `sales_report_region_period` | `sales_by_region_period` | the trend chart |
+| `sales_report_region_totals` | `sales_by_region_period_totals` | ranking regions |
+| `sales_report_by_rep` | `sales_by_rep` | team reporting |
+| `sales_report_by_dealer` | `sales_by_dealer` | the dealer book |
+
+Each takes `p_from` and `p_to` as `date`, inclusive at both ends, and a null bound
+is unbounded. So `(null, null)` is the all-time report, which is what the screen
+showed before the range existed, and an empty date input means "no bound" rather
+than being a default window. The range is expressed on the same
+`created_at at time zone 'Asia/Kolkata'` date the month buckets use; filtering on
+a UTC date would silently drop orders placed late on the last day of a window.
+
+The views are **kept and still used**. The dashboard reads `sales_by_rep` and
+`sales_by_dealer` for its charts, and the stage16 and stage17 suites assert the
+view definitions directly, so replacing them would have put 68 test assertions and
+the dashboard behind a change the export did not need. With a null range each
+function returns exactly its view's rows, which `stage20` asserts against whatever
+data is present, so the two paths cannot drift apart silently.
+
+`open_invoices` and `outstanding_amount` are deliberately **not** bounded by the
+range. An invoice balance is a point-in-time fact about money still owed, not a
+flow inside a window; dating it to a period end would mean reconstructing each
+invoice's balance as at that date from the payment allocation history, which is a
+different question. The screen and the spreadsheet both label these two columns as
+a current balance so no reader assumes all five money columns share one window.
+
+An inverted range raises `22023` rather than returning nothing, because an inverted
+range is the input most likely to produce an empty set and "no sales in that
+period" is a dangerously plausible answer to a typo. The check is a `perform` in a
+plpgsql body for the same reason: the first draft validated it in a `language sql`
+body as a guard CTE cross joined to the query, which is silently skipped when the
+visible set is empty — the exact case the check exists for.
+
+### Exporting
+
+- **`/api/reports/export?from=&to=`** returns a real `.xlsx`, five sheets: Summary,
+  Regions, Reporting lines, Dealer book, Monthly trend. Money is written as numbers
+  with a number format rather than pre-formatted strings, so the result can still
+  be summed and pivoted. The same roles as the screen, and it reads through the
+  same `security_invoker` functions, so the scoping is the database's decision.
+- **Print / PDF** is the browser's own print dialog, with a print stylesheet in
+  `web/src/app/globals.css`. There is deliberately no `/api/reports/pdf`: a second
+  rendering of the report would be a second thing that can disagree with the
+  first, and the browser can only print what is already correct on screen.
+
+The range lives in the query string and is parsed by `web/src/lib/report-range.ts`,
+shared by the screen and the export route, so a file always matches the page it was
+taken from. The controls are a plain `GET` form rather than client state, which
+makes the range bookmarkable and shareable and keeps the browser back button
+honest. An unparseable range is reported, never silently widened: falling back to
+all time would answer a question nobody asked with numbers that look right.
+
+`.xlsx` needs no spreadsheet-injection guard, unlike the CSV export above, and the
+reason is worth recording: CSV has no types so `=cmd|...` is a formula to Excel,
+whereas a `.xlsx` string cell is written as a shared string with no formula part
+and arrives as text. That was checked against the writer rather than assumed. The
+protection lives in the file format rather than in this code, which matters if the
+writer is ever swapped.
+
+The workbook is built with `exceljs`, not the SheetJS package named `xlsx`. SheetJS
+is frozen on npm at `0.18.5` with two high severity advisories and no fix
+available there; its maintained builds are distributed from SheetJS's own CDN,
+which is not something a CI job should pull. `exceljs` depends on `uuid` below
+11.1.1, which carries a moderate advisory, so `web/package.json` pins
+`overrides.uuid` to `^11.1.1` — npm's own suggested fix is to downgrade `exceljs`
+to 3.4.0, which is older rather than newer. With the override `npm audit` reports
+0 vulnerabilities, and `exceljs` 4.4.0 was verified to write and re-read a
+workbook on `uuid` 11.1.1.
 
 A dealer's region falls back `region` → `state` → `Unassigned`, with both values
 `btrim`ed. A whitespace-only region counts as unset, because it would otherwise

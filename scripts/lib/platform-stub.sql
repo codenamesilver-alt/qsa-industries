@@ -45,6 +45,7 @@ create table if not exists auth.users (
   email text,
   encrypted_password text,
   email_confirmed_at timestamptz,
+  confirmation_sent_at timestamptz,
   confirmation_token text,
   recovery_token text,
   email_change text,
@@ -57,10 +58,11 @@ create table if not exists auth.users (
 );
 
 create table if not exists auth.identities (
-  id uuid primary key,
+  id uuid primary key default gen_random_uuid(),
   provider_id text not null,
   user_id uuid not null references auth.users (id) on delete cascade,
   identity_data jsonb not null,
+  email text generated always as (lower(identity_data ->> 'email')) stored,
   provider text not null,
   last_sign_in_at timestamptz,
   created_at timestamptz,

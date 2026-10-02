@@ -14,3 +14,6 @@ node_modules/
 
 # logical database backups
 backups/
+
+# ui capture output (scripts/tmp-capture*.mjs, sheet.json)
+docs-shots/

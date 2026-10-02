@@ -113,6 +113,12 @@ export function DealerCreditForm({ dealer, canManageCommercial, canAssignRep, sa
               value={status}
             >
               <option value="active">Active</option>
+              {/* inactive is the sanctioned retirement path, and the dealer master
+                  offers it. Without it this select is controlled with a value that
+                  matches no option, so the browser shows Active while state still
+                  holds inactive, and touching the select writes active back --
+                  silently reactivating a deliberately retired account. */}
+              <option value="inactive">Inactive</option>
               <option value="suspended">Suspended</option>
             </select>
           </label>
