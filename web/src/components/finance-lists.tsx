@@ -14,8 +14,19 @@
 // The other half of the finance screen — the invoice register, the dealer account
 // payments and the dealer credit editor — use RecordPicker directly in the page,
 // because those rows are collapsible and RecordPicker accepts a row's markup as a prop.
-import type { DealerAgeingRow, DealerExposureRow, OrderRow, PaymentRow } from "../lib/data";
+import type {
+  DealerAgeingRow,
+  DealerExposureRow,
+  OrderRow,
+  PaymentRow,
+} from "../lib/data";
+import {
+  expenseModeLabel,
+  type ExpenseLedgerRow,
+  type ExpenseTotalsRow,
+} from "../lib/expense";
 import { formatDate, formatNumber } from "../lib/format";
+import { ExpenseReceiptButton, VoidExpenseButton } from "./expense-actions";
 import { GenerateInvoiceButton } from "./finance-actions";
 import { RecordFilter } from "./record-picker";
 
@@ -200,6 +211,157 @@ export function PaymentRegister({ payments }: { payments: PaymentRow[] }) {
             </li>
           ))}
         </ul>
+      )}
+    </RecordFilter>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+/**
+ * The expense register, newest first, with the voided rows kept in place.
+ *
+ * A voided row is shown struck through and greyed rather than removed, and that is the
+ * whole point of an append-only register: the first question after spotting a duplicate
+ * is "did we pay this twice", and that question is unanswerable from a register that
+ * quietly drops what it retracted. The amount stays visible next to the zero it now
+ * contributes, so a row reads as "₹40,000, written off" rather than as an absence.
+ */
+export function ExpenseRegister({ rows }: { rows: ExpenseLedgerRow[] }) {
+  return (
+    <RecordFilter
+      collapseAfter={15}
+      emptyMessage="No expenses recorded."
+      items={rows}
+      noMatchMessage="No expense matches that."
+      placeholder="Search by head, vendor, reference, note or amount"
+      searchKeys={(row) => [
+        row.head_name,
+        row.vendor ?? "",
+        row.reference ?? "",
+        row.notes ?? "",
+        expenseModeLabel(row.mode),
+        formatDate(row.expense_date),
+        String(row.amount),
+      ]}
+      searchLabel="Search the expense register"
+    >
+      {(visible) => (
+        <ul className="mt-4 divide-y divide-[#e8ede6]">
+          {visible.map((row) => (
+            <li
+              className={
+                row.is_void
+                  ? "flex flex-wrap items-start justify-between gap-4 py-4 text-[#8d938a] first:pt-0"
+                  : "flex flex-wrap items-start justify-between gap-4 py-4 first:pt-0"
+              }
+              key={row.id}
+            >
+              <div className="min-w-0">
+                <p className={row.is_void ? "font-semibold line-through" : "font-semibold"}>
+                  {row.head_name}
+                  {!row.head_is_active ? (
+                    <span className="ml-2 text-xs font-normal text-[#8d938a]">head retired</span>
+                  ) : null}
+                </p>
+                <p className="mt-1 text-xs text-[#819083]">
+                  {formatDate(row.expense_date)} · {expenseModeLabel(row.mode)}
+                  {row.vendor ? ` · ${row.vendor}` : ""}
+                  {row.reference ? ` · ref ${row.reference}` : ""}
+                </p>
+                {row.notes ? <p className="mt-1 text-xs text-[#819083]">{row.notes}</p> : null}
+                {row.tax_amount !== null ? (
+                  <p className="mt-1 text-xs text-[#819083]">
+                    Taxable ₹{formatNumber(row.taxable_amount)} + tax ₹{formatNumber(row.tax_amount)}
+                  </p>
+                ) : null}
+                {row.attachment_path ? (
+                  <ExpenseReceiptButton path={row.attachment_path} />
+                ) : null}
+                {row.is_void ? (
+                  <p className="mt-2 rounded-lg border border-[#f0c9c2] bg-[#fdf3f1] px-2 py-1 text-xs text-[#a03a26]">
+                    Voided {formatDate(row.voided_at)} — {row.void_reason}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-col items-end gap-2 text-right">
+                <p className={row.is_void ? "font-semibold line-through" : "font-semibold text-[#4e741d]"}>
+                  ₹{formatNumber(row.amount)}
+                </p>
+                {row.is_void ? <p className="mt-1 text-xs">contributes ₹0</p> : null}
+                {!row.is_void ? (
+                  <VoidExpenseButton
+                    expenseId={row.id}
+                    summary={`₹${formatNumber(row.amount)} to ${row.head_name}`}
+                  />
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </RecordFilter>
+  );
+}
+
+/**
+ * Spend grouped by head, net of voids.
+ *
+ * A head with no expenses still appears, because it is still a head somebody is about
+ * to file under. A head whose every expense was voided reads as zero spent with the
+ * voided count beside it, which is a different statement from "this head has never
+ * been used" and only the first one of those is true.
+ */
+export function ExpenseTotalsTable({ rows }: { rows: ExpenseTotalsRow[] }) {
+  return (
+    <RecordFilter
+      collapseAfter={15}
+      emptyMessage="No expense heads defined yet."
+      items={rows}
+      noMatchMessage="No head matches that."
+      placeholder="Search heads"
+      searchKeys={(row) => [row.head_name, String(row.net_amount), String(row.expense_count)]}
+      searchLabel="Search expense heads by name or spend"
+    >
+      {(visible) => (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-[#dfe6dc] text-xs uppercase tracking-wide text-[#718075]">
+                <th className="py-3 pr-4 font-semibold">Head</th>
+                <th className="py-3 pr-4 text-right font-semibold">Expenses</th>
+                <th className="py-3 pr-4 text-right font-semibold">Gross</th>
+                <th className="py-3 pr-4 text-right font-semibold">Voided</th>
+                <th className="py-3 text-right font-semibold">Net spend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e8ede6]">
+              {visible.map((row) => (
+                <tr className={row.head_is_active ? "" : "text-[#8d938a]"} key={row.head_id}>
+                  <td className="py-3 pr-4">
+                    <span className="font-semibold">{row.head_name}</span>
+                    {!row.head_is_active ? (
+                      <span className="ml-2 text-xs">retired</span>
+                    ) : null}
+                  </td>
+                  <td className="py-3 pr-4 text-right">
+                    {row.expense_count}
+                    {row.voided_count > 0 ? (
+                      <span className="ml-1 text-xs text-[#a03a26]">({row.voided_count} voided)</span>
+                    ) : null}
+                  </td>
+                  <td className="py-3 pr-4 text-right">₹{formatNumber(row.total_amount)}</td>
+                  <td className="py-3 pr-4 text-right text-[#a03a26]">
+                    {Number(row.voided_amount) > 0 ? `₹${formatNumber(row.voided_amount)}` : "—"}
+                  </td>
+                  <td className="py-3 text-right font-semibold">₹{formatNumber(row.net_amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </RecordFilter>
   );

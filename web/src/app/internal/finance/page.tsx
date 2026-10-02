@@ -4,10 +4,13 @@ import { DealerCreditForm } from "../../../components/dealer-credit-form";
 import { DealerPaymentForm, PaymentForm } from "../../../components/finance-actions";
 import {
   DealerExposureBars,
+  ExpenseRegister,
+  ExpenseTotalsTable,
   InvoiceAgeingTable,
   InvoiceQueue,
   PaymentRegister,
 } from "../../../components/finance-lists";
+import { ExpenseForm, ExpenseHeadManager } from "../../../components/expense-actions";
 import { FinanceSettingsForm } from "../../../components/finance-settings-form";
 import { CollapsiblePanel, PanelStack } from "../../../components/panel-stack";
 import { PortalShell } from "../../../components/portal-shell";
@@ -17,6 +20,9 @@ import {
   getDealerExposure,
   getDealerInvoiceAgeing,
   getDealerLedger,
+  getExpenseHeads,
+  getExpenseLedger,
+  getExpenseTotals,
   getFinanceSettings,
   getInvoices,
   getOrders,
@@ -42,16 +48,20 @@ const roles = ["admin", "finance"] as const;
 export default async function FinancePage() {
   const profile = await requireProfile(roles);
   const isAdmin = profile.role === "admin";
-  const [orders, invoices, payments, ledger, exposure, ageing, settings, dealers] = await Promise.all([
-    getOrders(),
-    getInvoices(),
-    getPayments(),
-    getDealerLedger(),
-    getDealerExposure(),
-    getDealerInvoiceAgeing(),
-    getFinanceSettings(),
-    getDealers(),
-  ]);
+  const [orders, invoices, payments, ledger, exposure, ageing, settings, dealers, expenseHeads, expenseLedger, expenseTotals] =
+    await Promise.all([
+      getOrders(),
+      getInvoices(),
+      getPayments(),
+      getDealerLedger(),
+      getDealerExposure(),
+      getDealerInvoiceAgeing(),
+      getFinanceSettings(),
+      getDealers(),
+      getExpenseHeads(),
+      getExpenseLedger(),
+      getExpenseTotals(),
+    ]);
   // private.can_view_user returns true for an admin and only self for everyone
   // else, so the rep picker is read here rather than letting the query fail for
   // finance, who can manage commercial columns but never reassign a rep.
@@ -61,6 +71,12 @@ export default async function FinancePage() {
   const invoicedTotal = invoices.reduce((sum, invoice) => sum + Number(invoice.total_amount), 0);
   const paidTotal = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
   const outstanding = ledger.reduce((sum, row) => sum + Number(row.outstanding_amount), 0);
+  // Net of voids, matching public.expense_ledger's own arithmetic rather than
+  // re-deriving it here: the view is the single place that decides what a void is worth,
+  // and a card that disagreed with it would be a worse bug than a duplicate calculation.
+  const expenseGross = expenseLedger.reduce((sum, row) => sum + Number(row.amount), 0);
+  const expenseNet = expenseLedger.reduce((sum, row) => sum + Number(row.net_amount), 0);
+  const expenseVoided = expenseLedger.filter((row) => row.is_void).length;
 
   const accountPaymentItems: PickerItem[] = exposure.map((row) => ({
     id: row.dealer_id,
@@ -118,6 +134,9 @@ export default async function FinancePage() {
       highlights={[
         "Generate GST invoices against delivered orders",
         "Record an invoice payment or a dealer account payment, partial amounts supported",
+        "Record expenses against a head catalogue, with an optional tax split",
+        "Append-only expense register — corrections are voids with a reason, never edits",
+        "Expense totals by head, net of written-off entries",
         "Invoice register with each invoice, its status and the amount still outstanding",
         "Invoice ageing by bucket, and credit exposure ranked by dealer",
         "Ageing and credit settings that drive the finance calculations",
@@ -127,11 +146,17 @@ export default async function FinancePage() {
       profile={profile}
       title="Know where every rupee stands."
     >
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard detail="Ready for manual invoicing" label="Dispatch queue" value={String(invoiceQueue.length).padStart(2, "0")} />
         <MetricCard detail="Issued invoice value" label="Invoiced" value={`₹${formatNumber(invoicedTotal)}`} />
         <MetricCard detail="All recorded receipts" label="Payments" value={`₹${formatNumber(paidTotal)}`} />
         <MetricCard detail="Invoice value less allocated receipts" label="Outstanding" value={`₹${formatNumber(outstanding)}`} />
+        <MetricCard
+          detail={expenseVoided > 0 ? `Net of ${expenseVoided} written off` : "Nothing written off yet"}
+          label="Expense spend"
+          value={`₹${formatNumber(expenseNet)}`}
+        />
+        <MetricCard detail="Recorded, before voids" label="Expense entries" value={String(expenseLedger.length).padStart(2, "0")} />
       </section>
 
       <div className="mt-6 flex justify-end">
@@ -231,6 +256,42 @@ export default async function FinancePage() {
             title="Dealer credit exposure"
           >
             <DealerExposureBars rows={exposure} />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            description="Record money that left the bank. A recorded expense is final — there is no edit, so a correction means voiding with a reason and filing again, which keeps the original visible instead of leaving a gap."
+            id="expense-entry"
+            summary={`${expenseHeads.filter((row) => row.is_active).length} active heads`}
+            title="Record an expense"
+          >
+            <ExpenseForm heads={expenseHeads} />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            description="What money is spent on: Rent, Travel, Utilities, Bank Charges. Finance maintains this too — an officer who cannot name a head files rent under Miscellaneous, and a Miscellaneous bucket is how a register stops being readable by December. Retiring a head takes it out of the picker and leaves everything already filed under it alone."
+            id="expense-heads"
+            summary={`${expenseHeads.length} heads`}
+            title="Expense heads"
+          >
+            <ExpenseHeadManager heads={expenseHeads} />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            description="Every expense recorded, newest first. Voided rows stay in place struck through, because the first question after spotting a duplicate is whether it was paid twice, and a register that quietly drops what it retracted cannot answer that."
+            id="expense-register"
+            summary={`${expenseLedger.length} entries`}
+            title="Expense register"
+          >
+            <ExpenseRegister rows={expenseLedger} />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            description="Spend by head, net of voids. A head with nothing filed under it still appears — it is still a head somebody is about to use."
+            id="expense-totals"
+            summary={`₹${formatNumber(expenseGross)} gross`}
+            title="Expense totals by head"
+          >
+            <ExpenseTotalsTable rows={expenseTotals} />
           </CollapsiblePanel>
 
           <CollapsiblePanel

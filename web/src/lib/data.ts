@@ -1393,3 +1393,53 @@ export async function getDealerOnboardings() {
   );
   return rows;
 }
+
+// ---------------------------------------------------------------------------
+// Expenses. Added in 20261003200000.
+//
+// The types, the payment-mode list and the bucket constants live in ./expense rather
+// than here. The client components need those by value, and importing them from this
+// file would pull the server Supabase client into the browser bundle, which fails the
+// build on next/headers. Re-exported below so server callers keep one import site.
+// ---------------------------------------------------------------------------
+
+export type { ExpenseHeadRow, ExpenseLedgerRow, ExpenseTotalsRow } from "./expense";
+export { EXPENSE_PAYMENT_MODES, expenseModeLabel } from "./expense";
+
+import type { ExpenseHeadRow, ExpenseLedgerRow, ExpenseTotalsRow } from "./expense";
+
+export async function getExpenseHeads() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("expense_heads")
+    .select("id, name, description, sort_order, is_active")
+    .order("is_active", { ascending: false })
+    .order("sort_order")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as ExpenseHeadRow[];
+}
+
+export async function getExpenseLedger() {
+  const supabase = await createClient();
+  const rows = await fetchAll<ExpenseLedgerRow>((from, to) =>
+    supabase
+      .from("expense_ledger")
+      .select("*")
+      .order("expense_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to),
+  );
+  return rows;
+}
+
+export async function getExpenseTotals() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("expense_totals_by_head")
+    .select("*")
+    .order("net_amount", { ascending: false })
+    .order("head_name");
+  if (error) throw error;
+  return (data ?? []) as ExpenseTotalsRow[];
+}

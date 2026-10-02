@@ -8,6 +8,10 @@
 --
 --   * auth.users / auth.identities / auth.uid() -- GoTrue owns these, no
 --     migration creates them.
+--   * storage.buckets / storage.objects -- Storage owns these, no migration
+--     creates them. The expense module is the first thing in this project to
+--     store a file, so until now nothing needed them and the omission was
+--     invisible.
 --   * USAGE on the extensions schema for anon and authenticated. The pgTAP
 --     suites switch to anon mid-file and then still have to resolve pgTAP
 --     functions, which live in extensions.
@@ -78,8 +82,50 @@ create or replace function auth.uid() returns uuid
   stable
   as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 
+-- ------------------------------------------------------------------ storage
+
+create schema if not exists storage;
+
+-- Storage owns these too. Only the columns the migrations actually touch are
+-- reproduced, plus the ones that carry a not-null default, because a stub that
+-- is missing a default is worse than no stub: the replay would succeed against a
+-- schema that differs from production in a way nothing would report.
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null,
+  owner uuid,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  public boolean default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
+
+create table if not exists storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text references storage.buckets (id),
+  name text,
+  owner uuid,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  last_accessed_at timestamptz default now(),
+  metadata jsonb,
+  owner_id text,
+  user_metadata jsonb
+);
+
+create unique index if not exists objects_bucket_id_name_key
+  on storage.objects (bucket_id, name);
+
+-- The real tables are owned by supabase_storage_admin and RLS-protected, which is
+-- why the expense migration reaches them through policies rather than grants.
+alter table storage.objects enable row level security;
+
 -- ------------------------------------------------------------------- grants
 
 grant usage on schema public to anon, authenticated, service_role;
 grant usage on schema extensions to anon, authenticated, service_role;
 grant usage on schema auth to anon, authenticated, service_role;
+grant usage on schema storage to anon, authenticated, service_role;
+grant select, insert on storage.buckets to service_role;
+grant select, insert, update, delete on storage.objects to authenticated, service_role;
