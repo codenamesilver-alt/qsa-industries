@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HighlightList } from "./highlight-list";
 import { LoginForm } from "./login-form";
 import { portalConfig, type Portal } from "../lib/portal-config";
 
@@ -22,14 +23,11 @@ export function PortalLogin({ portal }: { portal: Portal }) {
             {config.title}
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-8 text-[#5d6b60]">{config.description}</p>
-          <ul className="mt-8 max-w-md space-y-3">
-            {config.highlights.map((highlight) => (
-              <li className="flex gap-3 text-sm leading-6 text-[#334536]" key={highlight}>
-                <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#9db56a]" />
-                {highlight}
-              </li>
-            ))}
-          </ul>
+          {/* Same treatment as the in-portal headers: the headline sells the
+              workspace, the bullet list is reference. Collapsed here too, because this
+              screen's job is to get somebody to the login form, and the list was pushing
+              it below the fold on a laptop. */}
+          <HighlightList className="mt-8 max-w-md" items={config.highlights} />
           <p className="mt-8 max-w-md text-sm leading-6 text-[#718075]">
             Accounts are provisioned by QSA administration. Access follows your assigned role and reporting scope.
           </p>

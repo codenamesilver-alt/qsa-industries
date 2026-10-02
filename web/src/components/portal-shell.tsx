@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { roleLabel, type Profile } from "../lib/auth";
+import { HighlightList } from "./highlight-list";
 import { PortalNav } from "./portal-nav";
 import { SignOutButton } from "./sign-out-button";
 
@@ -55,17 +56,10 @@ export function PortalShell({
                   {title}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5d6b60]">{description}</p>
-                <ul className="mt-3 grid gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-                  {highlights.map((highlight) => (
-                    <li className="flex gap-2 text-xs leading-5 text-[#334536]" key={highlight}>
-                      <span
-                        aria-hidden="true"
-                        className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#6f8c3b]"
-                      />
-                      <span>{highlight}</span>
-                    </li>
-                  ))}
-                </ul>
+                {/* The eyebrow, headline and description are the page. The highlights are
+                    a list of what the page holds, which is reference rather than content,
+                    so it sits behind a link instead of pushing the first panel down. */}
+                <HighlightList items={highlights} />
               </div>
               <div className="flex max-w-sm items-center gap-3 rounded-2xl bg-[#15221b] px-4 py-3 text-white shadow-[0_16px_40px_rgba(21,34,27,0.16)]">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d8f35b] text-xs font-bold text-[#15221b]">
