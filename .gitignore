@@ -17,3 +17,6 @@ backups/
 
 # ui capture output (scripts/tmp-capture*.mjs, sheet.json)
 docs-shots/
+
+.vercel
+.env*

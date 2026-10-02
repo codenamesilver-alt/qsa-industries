@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../lib/supabase/client";
-import { type UserRole } from "../lib/auth";
+import { admitsRole } from "../lib/roles";
 import { portalConfig, type Portal } from "../lib/portal-config";
 
 export function LoginForm({ portal }: { portal: Portal }) {
@@ -37,7 +37,7 @@ export function LoginForm({ portal }: { portal: Portal }) {
       .eq("id", data.user.id)
       .maybeSingle();
 
-    if (profileError || !profile || !config.allowedRoles.includes(profile.role as UserRole)) {
+    if (profileError || !profile || !admitsRole(profile.role, config.allowedRoles)) {
       await supabase.auth.signOut();
       setError("This account is not provisioned for this portal.");
       setLoading(false);

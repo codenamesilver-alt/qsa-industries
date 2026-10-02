@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Profile, UserRole } from "../lib/auth";
+import { isSuperuser } from "../lib/roles";
 
 const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string }>>> = {
   // Organization is the one entry that is on every internal list and on no sales
@@ -104,9 +105,39 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
   ],
 };
 
+// A superuser gets the menu of the portal it is standing in, not one fixed list.
+// Reading the internal nav while looking at dealer pages is how you end up hunting
+// for a link that is not there.
+const superuserNavByPrefix: ReadonlyArray<readonly [string, Array<{ href: string; label: string }>]> = [
+  [
+    "/dealer",
+    [
+      { href: "/dealer", label: "Overview" },
+      { href: "/dealer/catalog", label: "Catalog" },
+      { href: "/dealer/orders", label: "Orders" },
+    ],
+  ],
+  [
+    "/sales",
+    [
+      { href: "/sales", label: "Overview" },
+      { href: "/sales/orders", label: "Orders & approvals" },
+      { href: "/sales/team", label: "Team" },
+      { href: "/sales/reports", label: "Reporting" },
+    ],
+  ],
+];
+
 export function PortalNav({ profile }: { profile: Profile }) {
-  const links = linksByRole[profile.role] ?? [];
   const pathname = usePathname();
+
+  let links: Array<{ href: string; label: string }>;
+  if (isSuperuser(profile.role)) {
+    const match = superuserNavByPrefix.find(([prefix]) => pathname.startsWith(prefix));
+    links = match ? match[1] : (linksByRole[profile.role] ?? []);
+  } else {
+    links = linksByRole[profile.role] ?? [];
+  }
 
   return (
     <nav

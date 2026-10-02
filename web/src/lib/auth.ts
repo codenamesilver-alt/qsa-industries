@@ -1,23 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "./supabase/server";
+import { admitsRole, type UserRole } from "./roles";
 
-// Mirrors public.user_role in the database. qc_staff was added there in
-// 20260926093100 and was missing from this list, so a QC user authenticated
-// successfully and then had no role that matched anywhere in the app.
-export const userRoles = [
-  "admin",
-  "production_manager",
-  "inventory_manager",
-  "qc_staff",
-  "sales_rep",
-  "sales_manager",
-  "sales_director",
-  "logistics",
-  "finance",
-  "dealer",
-] as const;
-
-export type UserRole = (typeof userRoles)[number];
+// The role vocabulary and the guard predicates live in ./roles, which imports
+// nothing server-only. This module reaches next/headers, so client components must
+// take roles from ./roles and never from here.
+export { admitsRole, isSuperuser, superuserRoles, userRoles, type UserRole } from "./roles";
 
 export type Profile = {
   id: string;
@@ -68,7 +56,7 @@ export async function requireProfile(allowedRoles: readonly UserRole[]) {
     redirect("/login");
   }
 
-  if (!allowedRoles.includes(profile.role)) {
+  if (!admitsRole(profile.role, allowedRoles)) {
     // Not the marketing homepage: that reads as "you are signed out" even though
     // the session is perfectly valid, which made an ordinary permission mistake
     // look like a broken login.
