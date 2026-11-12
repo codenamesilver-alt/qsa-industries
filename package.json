@@ -5,6 +5,8 @@
   "license": "ISC",
   "type": "commonjs",
   "scripts": {
+    "build": "npm run build --prefix web",
+    "start": "npm start --prefix web",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:test": "node scripts/db-test.mjs",
     "db:verify-fresh": "node scripts/db-verify-fresh.mjs",
