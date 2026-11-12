@@ -17,7 +17,6 @@
 import { useMemo, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  EXPENSE_BUCKET,
   EXPENSE_MAX_BYTES,
   EXPENSE_MIME_TYPES,
   EXPENSE_PAYMENT_MODES,
@@ -25,7 +24,7 @@ import {
   type ExpenseHeadRow,
 } from "../lib/expense";
 import { businessDate } from "../lib/format";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 
 const field =
   "mt-2 w-full rounded-xl border border-[#d6e1ce] px-3 py-2 text-sm font-normal";
@@ -122,12 +121,18 @@ export function ExpenseHeadManager({ heads }: { heads: ExpenseHeadRow[] }) {
   function save() {
     if (!trimmedName || duplicate) return;
     startTransition(async () => {
-      const { error } = await createClient().rpc("upsert_expense_head", {
-        p_name: trimmedName,
-        p_description: description.trim() || null,
-        p_sort_order: editing ? editing.sort_order : active.length,
-        p_head_id: editing?.id ?? null,
+      const res = await fetch("/api/expenses/heads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_name: trimmedName,
+          p_description: description.trim() || null,
+          p_sort_order: editing ? editing.sort_order : active.length,
+          p_head_id: editing?.id ?? null,
+        }),
       });
+      const json = await res.json();
+      const error = res.ok ? null : { message: json.error ?? "Failed" };
       if (error) {
         setMessage({ tone: "error", text: error.message });
         return;
@@ -160,10 +165,13 @@ export function ExpenseHeadManager({ heads }: { heads: ExpenseHeadRow[] }) {
       // Through the RPC rather than a direct update, the way the rest of this module
       // writes. There is no delete_expense_head() and no update grant on the table, so
       // retiring is the only exit and it is reversible by design.
-      const { error } = await createClient().rpc("set_expense_head_active", {
-        p_head_id: row.id,
-        p_is_active: next,
+      const r2 = await fetch("/api/expenses/heads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_head_id: row.id, p_is_active: next }),
       });
+      const j2 = await r2.json();
+      const error = r2.ok ? null : { message: j2.error ?? "Failed" };
       if (error) {
         setMessage({ tone: "error", text: error.message });
         return;
@@ -349,48 +357,37 @@ export function ExpenseForm({ heads }: { heads: ExpenseHeadRow[] }) {
     if (!canSave) return;
 
     startTransition(async () => {
-      const supabase = createClient();
-
-      // The upload goes first because the expense id does not exist yet and the client
-      // has no privilege to insert the row, so the path cannot be derived from it. This
-      // ordering is the cost of keeping the insert privilege out of the client's hands.
-      //
-      // It means the two writes cannot be one transaction: the file is durable before the
-      // row that will point at it is. If the upload fails, nothing is recorded, which is
-      // the right way round - a receipt that silently failed to attach is worse than an
-      // entry that was not filed yet. The reverse case, handled below, is the one that
-      // leaves debris.
       let attachmentPath: string | null = null;
       if (file) {
-        const path = expenseAttachmentPath(file);
-        const { error: uploadError } = await supabase.storage
-          .from(EXPENSE_BUCKET)
-          .upload(path, file, { contentType: file.type, upsert: false });
-        if (uploadError) {
-          setMessage({
-            tone: "error",
-            text: `The receipt did not upload, so nothing was recorded. ${uploadError.message}`,
-          });
+        const fd = new FormData();
+        fd.append("file", file);
+        const upRes = await fetch("/api/expenses/upload", { method: "POST", body: fd });
+        const upJson = await upRes.json();
+        if (!upRes.ok) {
+          setMessage({ tone: "error", text: upJson.error ?? "Upload failed" });
           return;
         }
-        attachmentPath = path;
+        attachmentPath = upJson.data?.path ?? null;
       }
 
-      const { error } = await supabase.rpc("record_expense", {
-        p_head_id: headId,
-        p_amount: amountValue,
-        p_expense_date: expenseDate,
-        p_vendor: vendor.trim() || null,
-        p_mode: mode,
-        p_reference: reference.trim() || null,
-        // Both halves or neither. Sending taxable alone would be refused by the
-        // database, and a form that lets you press the button into a refusal is worse
-        // than one that sends what it means.
-        p_taxable_amount: hasTax && Number.isFinite(taxableValue) ? taxableValue : null,
-        p_tax_amount: hasTax && Number.isFinite(taxValue) ? taxValue : null,
-        p_attachment_path: attachmentPath,
-        p_notes: notes.trim() || null,
+      const recRes = await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_head_id: headId,
+          p_amount: amountValue,
+          p_expense_date: expenseDate,
+          p_vendor: vendor.trim() || null,
+          p_mode: mode,
+          p_reference: reference.trim() || null,
+          p_taxable_amount: hasTax && Number.isFinite(taxableValue) ? taxableValue : null,
+          p_tax_amount: hasTax && Number.isFinite(taxValue) ? taxValue : null,
+          p_attachment_path: attachmentPath,
+          p_notes: notes.trim() || null,
+        }),
       });
+      const recJson = await recRes.json();
+      const error = recRes.ok ? null : { message: recJson.error ?? "Failed" };
 
       if (error) {
         // The object is already stored and the row does not exist. There is no delete
@@ -403,9 +400,7 @@ export function ExpenseForm({ heads }: { heads: ExpenseHeadRow[] }) {
         // for an update policy, doing a second job here.
         setMessage({
           tone: "error",
-          text: attachmentPath
-            ? `${error.message} The receipt uploaded but the entry did not save, so the file is now orphaned and needs clearing from the storage console. Pressing the button again will start clean.`
-            : error.message,
+          text: error.message,
         });
         return;
       }
@@ -430,6 +425,7 @@ export function ExpenseForm({ heads }: { heads: ExpenseHeadRow[] }) {
 
   return (
     <form onSubmit={submit}>
+      <div className="flex justify-end"><PdfHelp guide="22-expenses" /></div>
       <MessageBox message={message} />
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -649,14 +645,7 @@ export function ExpenseReceiptButton({ path }: { path: string }) {
 
   function open() {
     startTransition(async () => {
-      const { data, error: signError } = await createClient()
-        .storage.from(EXPENSE_BUCKET)
-        .createSignedUrl(path, 60);
-      if (signError || !data?.signedUrl) {
-        setError(signError?.message ?? "That receipt could not be opened.");
-        return;
-      }
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      window.open(path, "_blank", "noopener,noreferrer");
     });
   }
 
@@ -704,10 +693,13 @@ export function VoidExpenseButton({
     }
 
     startTransition(async () => {
-      const { error: rpcError } = await createClient().rpc("void_expense", {
-        p_expense_id: expenseId,
-        p_void_reason: trimmed,
+      const vRes = await fetch(`/api/expenses/${expenseId}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_void_reason: trimmed }),
       });
+      const vJson = await vRes.json();
+      const rpcError = vRes.ok ? null : { message: vJson.error ?? "Failed" };
       if (rpcError) {
         // Worth surfacing verbatim rather than replacing with our own wording: the two
         // real refusals here are "already voided, on <date>" and "you are not finance",

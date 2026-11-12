@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import { admitsRole } from "../lib/roles";
 import { portalConfig, type Portal } from "../lib/portal-config";
 
@@ -11,34 +10,48 @@ export function LoginForm({ portal }: { portal: Portal }) {
   const config = portalConfig[portal];
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("qsa_remember");
+      if (saved) {
+        const { email: e, password: p } = JSON.parse(saved);
+        if (e) setEmail(e);
+        if (p) setPassword(p);
+        setRemember(true);
+      }
+    } catch {}
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setLoading(true);
 
-    const supabase = createClient();
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    if (remember) {
+      try { localStorage.setItem("qsa_remember", JSON.stringify({ email, password })); } catch {}
+    } else {
+      try { localStorage.removeItem("qsa_remember"); } catch {}
+    }
 
-    if (signInError || !data.user) {
-      setError(signInError?.message ?? "Unable to sign in.");
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setError(json.error ?? "Unable to sign in.");
       setLoading(false);
       return;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", data.user.id)
-      .maybeSingle();
-
-    if (profileError || !profile || !admitsRole(profile.role, config.allowedRoles)) {
-      await supabase.auth.signOut();
+    const profile = json.profile;
+    if (!profile || !admitsRole(profile.role, config.allowedRoles)) {
+      await fetch("/api/auth/logout", { method: "POST" });
       setError("This account is not provisioned for this portal.");
       setLoading(false);
       return;
@@ -79,6 +92,19 @@ export function LoginForm({ portal }: { portal: Portal }) {
           type="password"
           value={password}
         />
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          checked={remember}
+          className="h-4 w-4 rounded border-[#d6e1ce] text-[#6f8c3b] focus:ring-[#d8f35b]"
+          id="remember"
+          name="remember"
+          onChange={(event) => setRemember(event.target.checked)}
+          type="checkbox"
+        />
+        <label className="text-sm font-medium text-[#334536]" htmlFor="remember">
+          Remember me
+        </label>
       </div>
       {error ? (
         <p aria-live="polite" className="rounded-2xl bg-[#fff0ed] px-4 py-3 text-sm font-medium text-[#a33a2b]">

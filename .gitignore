@@ -1,12 +1,12 @@
 .env
 .env.*
 !.env.example
-supabase/.temp/
+database/.temp/
 web/.next/
 web/out/
 web/node_modules/
 node_modules/
-.opencode/supabase-auth.json
+.opencode/database-auth.json
 
 # playwright smoke test output
 .smoke/

@@ -1,0 +1,13 @@
+select (select count(*) from auth.users) as auth_users,
+       (select count(*) from public.users) as profiles,
+       (select count(*) from public.designations) as designations,
+       (select count(*) from public.products) as products,
+       (select count(*) from public.dealers) as dealers,
+       (select count(*) from public.orders) as orders,
+       (select count(*) from public.invoices) as invoices,
+       (select count(*) from public.payments) as payments,
+       (select count(*) from public.stock_movements) as stock_moves,
+       (select count(*) from public.production_runs) as prod_runs,
+       (select count(*) from public.purchase_orders) as purchase_orders,
+       (select count(*) from public.expenses) as expenses,
+       (select count(*) from public.expense_heads) as expense_heads;

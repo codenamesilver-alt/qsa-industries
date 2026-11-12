@@ -14,7 +14,7 @@
 // Environment variables are not written here. They belong in
 // `web/.env.production.local`, which is gitignored, so credentials never reach
 // the repository. Next.js reads that file at build time for NEXT_PUBLIC_*
-// values, which means the app has to be rebuilt whenever the Supabase URL or
+// values, which means the app has to be rebuilt whenever the database URL or
 // publishable key changes.
 
 module.exports = {

@@ -211,7 +211,7 @@ const ACCOUNTS = [
 const DESTINATION = { internal: "/internal", sales: "/sales", dealer: "/dealer" };
 
 // Noise that is not a defect in this app.
-const IGNORE = [/favicon/i, /Download the React DevTools/i, /supabase.*rate limit/i];
+const IGNORE = [/favicon/i, /Download the React DevTools/i, ];
 
 // A 200 that renders an empty shell, a Next.js error boundary, or a page whose
 // RLS query returned nothing all look identical to a healthy page if you only

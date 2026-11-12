@@ -1,33 +1,25 @@
-import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getProfile } from "../../../../lib/auth";
-import { businessDate } from "../../../../lib/format";
-import { createClient } from "../../../../lib/supabase/server";
+import { query } from "@/lib/db";
+import { getProfile, admitsRole } from "@/lib/auth";
+import { createHash } from "crypto";
 
-function csvCell(value: unknown) {
-  const text = value === null || value === undefined ? "" : String(value);
-  const normalized = text.trimStart();
-  const formulaLike =
-    /^[=+@]/.test(normalized) ||
-    (normalized.startsWith("-") && !/^-\d+(?:\.\d+)?$/.test(normalized));
-  const safeText = formulaLike ? `'${text}` : text;
-  return `"${safeText.replaceAll('"', '""')}"`;
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function isIsoDate(value: string | null): value is string {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+function csvCell(value: unknown) {
+  const text = value == null ? "" : String(value);
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
 }
 
 export async function GET(request: Request) {
   const profile = await getProfile();
-  if (!profile || !["admin", "finance"].includes(profile.role)) {
-    return NextResponse.json({ error: "Finance access required." }, { status: 403 });
-  }
-
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!admitsRole(profile.role, ['admin','finance'] as any)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const userId = profile.id;
   const url = new URL(request.url);
-  const today = businessDate();
+  const today = new Date().toISOString().slice(0, 10);
   const monthStart = `${today.slice(0, 7)}-01`;
   const fromValue = url.searchParams.get("from");
   const toValue = url.searchParams.get("to");
@@ -40,120 +32,61 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Export period is invalid." }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const pageSize = 1000;
-  const invoiceRows: Array<Record<string, unknown>> = [];
-  const paymentRows: Array<Record<string, unknown>> = [];
+  const invoices = await query<any>(
+    `SELECT i.*, d.name AS dealer_name, d.email AS dealer_email FROM invoices i LEFT JOIN dealers d ON d.id=i.dealer_id WHERE i.invoice_date >= ? AND i.invoice_date <= ? ORDER BY i.invoice_number`,
+    [periodStart, periodEnd],
+  );
+  const items = await query<any>(
+    `SELECT oi.*, p.sku, p.name AS product_name FROM order_items oi LEFT JOIN products p ON p.id=oi.product_id WHERE oi.order_id IN (SELECT order_id FROM invoices WHERE invoice_date >= ? AND invoice_date <= ?)`,
+    [periodStart, periodEnd],
+  );
+  const itemsByOrder: Record<string, any[]> = {};
+  for (const it of items) (itemsByOrder[it.order_id] ||= []).push(it);
 
-  for (let offset = 0; ; offset += pageSize) {
-    const page = await supabase
-      .from("tally_invoice_lines")
-      .select("*")
-      .gte("invoice_date", periodStart)
-      .lte("invoice_date", periodEnd)
-      .order("invoice_number")
-      .order("line_id")
-      .range(offset, offset + pageSize - 1);
-    if (page.error) {
-      return NextResponse.json({ error: page.error.message }, { status: 500 });
-    }
-    invoiceRows.push(...(page.data ?? []));
-    if ((page.data?.length ?? 0) < pageSize) break;
-  }
-
-  for (let offset = 0; ; offset += pageSize) {
-    const page = await supabase
-      .from("tally_payment_lines")
-      .select("*")
-      .gte("export_date", periodStart)
-      .lte("export_date", periodEnd)
-      .order("export_date")
-      .order("line_id")
-      .range(offset, offset + pageSize - 1);
-    if (page.error) {
-      return NextResponse.json({ error: page.error.message }, { status: 500 });
-    }
-    paymentRows.push(...(page.data ?? []));
-    if ((page.data?.length ?? 0) < pageSize) break;
-  }
+  const payments = await query<any>(
+    `SELECT p.*, d.name AS dealer_name, i.invoice_number FROM payments p LEFT JOIN dealers d ON d.id=p.dealer_id LEFT JOIN invoices i ON i.id=p.invoice_id WHERE p.payment_date >= ? AND p.payment_date <= ? ORDER BY p.payment_date`,
+    [periodStart, periodEnd],
+  );
 
   const headers = [
-    "record_type",
-    "document_number",
-    "document_date",
-    "dealer_name",
-    "dealer_email",
-    "sku",
-    "product_name",
-    "quantity",
-    "unit_price",
-    "line_total",
-    "taxable_amount",
-    "gst_amount",
-    "invoice_total",
-    "payment_amount",
-    "payment_mode",
-    "payment_reference",
+    "record_type", "document_number", "document_date", "dealer_name", "dealer_email",
+    "sku", "product_name", "quantity", "unit_price", "line_total", "taxable_amount",
+    "gst_amount", "invoice_total", "payment_amount", "payment_mode", "payment_reference",
   ];
-  const rows = [
-    ...invoiceRows.map((row) => [
-      "invoice",
-      row.invoice_number,
-      row.invoice_date,
-      row.dealer_name,
-      row.dealer_email,
-      row.sku,
-      row.product_name,
-      row.quantity,
-      row.unit_price,
-      row.line_total,
-      row.taxable_amount,
-      row.gst_amount,
-      row.total_amount,
-      "",
-      "",
-      "",
-    ]),
-    ...paymentRows.map((row) => [
-      "payment",
-      row.invoice_number ?? "",
-      row.export_date,
-      row.dealer_name,
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      row.amount,
-      row.mode,
-      row.reference,
-    ]),
-  ];
+  const rows: any[] = [];
+  for (const inv of invoices) {
+    const invItems = itemsByOrder[inv.order_id] || [];
+    if (invItems.length === 0) {
+      rows.push(["invoice", inv.invoice_number, inv.invoice_date, inv.dealer_name, inv.dealer_email, "", "", "", "", "", inv.taxable_amount, inv.gst_amount, inv.total_amount, "", "", ""]);
+    } else {
+      for (const it of invItems) {
+        rows.push(["invoice", inv.invoice_number, inv.invoice_date, inv.dealer_name, inv.dealer_email, it.sku, it.product_name, it.quantity, it.unit_price, it.line_total, inv.taxable_amount, inv.gst_amount, inv.total_amount, "", "", ""]);
+      }
+    }
+  }
+  for (const p of payments) {
+    rows.push(["payment", p.invoice_number ?? "", p.payment_date, p.dealer_name, "", "", "", "", "", "", "", "", "", p.amount, p.mode, p.reference]);
+  }
+
   const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const checksum = createHash("sha256").update(csv).digest("hex");
-  const exportResult = await supabase.rpc("record_tally_export", {
-    export_format: "csv",
-    period_start_value: periodStart,
-    period_end_value: periodEnd,
-    export_row_count: rows.length,
-    export_storage_path: null,
-    export_checksum: checksum,
-  });
 
-  if (exportResult.error) {
-    return NextResponse.json({ error: exportResult.error.message }, { status: 500 });
+  // Audit record (matches handoff claim).
+  try {
+    await query(
+      `INSERT INTO tally_exports (id, format, period_start, period_end, row_count, checksum, generated_by, created_at)
+       VALUES (?,?,?,?,?,?,?,NOW())`,
+      [crypto.randomUUID(), "csv", periodStart, periodEnd, rows.length, checksum, userId],
+    );
+  } catch {
+    // Audit write must not block the export.
   }
 
   return new NextResponse(csv, {
     headers: {
-      "Content-Disposition": `attachment; filename="qsa-tally-${periodStart}-to-${periodEnd}.csv"`,
       "Content-Type": "text/csv; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-QSA-Export-Checksum": checksum,
+      "Content-Disposition": `attachment; filename="tally-export-${periodStart}-to-${periodEnd}.csv"`,
+      "X-Export-Checksum": checksum,
     },
   });
 }

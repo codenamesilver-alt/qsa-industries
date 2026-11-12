@@ -1,11 +1,39 @@
 import { redirect } from "next/navigation";
-import { createClient } from "./supabase/server";
+import { cookies } from "next/headers";
+import { createHmac, timingSafeEqual } from "crypto";
+import { queryOne } from "./db";
 import { admitsRole, type UserRole } from "./roles";
 
-// The role vocabulary and the guard predicates live in ./roles, which imports
-// nothing server-only. This module reaches next/headers, so client components must
-// take roles from ./roles and never from here.
 export { admitsRole, isSuperuser, superuserRoles, userRoles, type UserRole } from "./roles";
+
+const SESSION_SECRET = process.env.SESSION_SECRET || "qsa-dev-session-secret-change-in-production";
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+
+function sign(payload: string): string {
+  return createHmac("sha256", SESSION_SECRET).update(payload).digest("hex");
+}
+
+export function issueSessionToken(userId: string): string {
+  const expires = Date.now() + SESSION_MAX_AGE * 1000;
+  const payload = `${userId}.${expires}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+export function verifySessionToken(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, expiresStr, sig] = parts;
+  const expires = Number(expiresStr);
+  if (!Number.isFinite(expires) || Date.now() > expires) return null;
+  const payload = `${userId}.${expiresStr}`;
+  const expected = sign(payload);
+  try {
+    if (!timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expected, "hex"))) return null;
+  } catch {
+    return null;
+  }
+  return userId;
+}
 
 export type Profile = {
   id: string;
@@ -15,54 +43,38 @@ export type Profile = {
   dealer_id: string | null;
 };
 
-const profileSelect = "id, full_name, email, role, dealer_id";
+export async function getSessionUserId(): Promise<string | null> {
+  const store = await cookies();
+  const token = store.get("qsa_session")?.value;
+  if (!token) return null;
+  return verifySessionToken(token);
+}
 
 export async function getProfile(): Promise<Profile | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError) {
-    if (userError.name === "AuthSessionMissingError") {
-      return null;
-    }
-
-    throw userError;
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  const { data, error } = await supabase
-    .from("users")
-    .select(profileSelect)
-    .eq("id", user.id)
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data as Profile;
+  const id = await getSessionUserId();
+  if (!id) return null;
+  const row = await queryOne<any>(
+    "SELECT id, full_name, email, role, dealer_id FROM users WHERE id = ? AND is_active = 1",
+    [id],
+  );
+  if (!row) return null;
+  return {
+    id: row.id,
+    full_name: row.full_name,
+    email: row.email,
+    role: row.role as UserRole,
+    dealer_id: row.dealer_id,
+  };
 }
 
 export async function requireProfile(allowedRoles: readonly UserRole[]) {
   const profile = await getProfile();
-
   if (!profile) {
     redirect("/login");
   }
-
   if (!admitsRole(profile.role, allowedRoles)) {
-    // Not the marketing homepage: that reads as "you are signed out" even though
-    // the session is perfectly valid, which made an ordinary permission mistake
-    // look like a broken login.
     redirect("/unauthorized");
   }
-
   return profile;
 }
 

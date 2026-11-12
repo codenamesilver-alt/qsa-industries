@@ -1,5 +1,9 @@
 "use client";
 
+import { createContext, useContext, useMemo, useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { PdfHelp } from "./pdf-help";
+
 // Section-level dropdowns, one open at a time per page.
 //
 // Search on its own does not make a page shorter. It makes a long page findable, and
@@ -16,8 +20,6 @@
 // Every collapsed header keeps its description and an optional count, because a
 // collapsed section that hides the fact that it holds twelve invoices is worse than the
 // long page it replaced. Collapsed means closed, not unknown.
-import { createContext, useContext, useMemo, useState } from "react";
-
 type PanelStackValue = {
   openId: string | null;
   toggle: (id: string) => void;
@@ -32,7 +34,11 @@ const PanelStackContext = createContext<PanelStackValue | null>(null);
  * case is one click fewer than a page that starts fully collapsed.
  */
 export function PanelStack({ children, defaultOpenId = null }: { children: React.ReactNode; defaultOpenId?: string | null }) {
-  const [openId, setOpenId] = useState<string | null>(defaultOpenId);
+  const params = useSearchParams();
+  const fromUrl = params.get("open");
+  const [openId, setOpenId] = useState<string | null>(fromUrl || defaultOpenId);
+  // sync if URL changes
+  // (simple: only initial)
 
   const value = useMemo<PanelStackValue>(
     () => ({ openId, toggle: (id: string) => setOpenId((current) => (current === id ? null : id)) }),
@@ -51,6 +57,7 @@ export function CollapsiblePanel({
   title,
   description,
   summary,
+  helpGuide,
   children,
 }: {
   id: string;
@@ -58,14 +65,21 @@ export function CollapsiblePanel({
   description?: string;
   /** Shown on the right of the collapsed header, e.g. "12 records". */
   summary?: React.ReactNode;
+  helpGuide?: string;
   children: React.ReactNode;
 }) {
   const stack = useContext(PanelStackContext);
   const open = stack ? stack.openId === id : true;
   const bodyId = `panel-${id}`;
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (open && ref.current) {
+      ref.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [open]);
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-[#dfe6dc] bg-white">
+    <section className="overflow-hidden rounded-[2rem] border border-[#dfe6dc] bg-white" id={id} ref={ref}>
       <h2>
         <button
           aria-controls={bodyId}
@@ -86,6 +100,7 @@ export function CollapsiblePanel({
                 {summary}
               </span>
             ) : null}
+            {helpGuide ? <PdfHelp guide={helpGuide} /> : null}
             <span aria-hidden="true" className={`text-xs text-[#819083] transition-transform ${open ? "rotate-180" : ""}`}>
               ▾
             </span>

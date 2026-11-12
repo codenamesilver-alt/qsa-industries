@@ -237,7 +237,7 @@ These are the points where work is blocked on an answer rather than on effort.
 
 These are constraints that exist for a reason and should not be relaxed casually:
 
-- **Never run `supabase db reset`.** The custom migration runner records whole migration files, and a reset would destroy data that cannot be reconstructed.
+- **Never run `database db reset`.** The custom migration runner records whole migration files, and a reset would destroy data that cannot be reconstructed.
 - **Never re-run the live backdated migrations** `20260925092200` or `20260925092400`. They are recorded as applied and re-running them would corrupt the order timeline.
 - **Always replay into an empty database before applying to the live one.** This is the only thing standing between a bad migration and the live data.
 - **Do not expose `.env.local` or any credentials.** The demo password in use is a local development value only and must be changed before any real deployment.
@@ -250,12 +250,13 @@ These are constraints that exist for a reason and should not be relaxed casually
 Branch `master`, no remote configured. All of today's work is uncommitted and shows as untracked:
 
 - `docs/` (requirements and build plan)
-- `supabase/migrations/20260926093000_gst_hsn_invoice_lines.sql` — applied live
-- `supabase/migrations/20260926093100_qc_staff_role_enum.sql` — pending
-- `supabase/migrations/20260926093200_qc_staff_role_policies.sql` — pending
-- `supabase/migrations/20260926093300_order_delivery_and_proxy.sql` — pending
-- `supabase/migrations/20260926093400_dealer_region.sql` — pending
-- `supabase/migrations/20260926093500_credit_ageing_settings.sql` — pending
-- `supabase/migrations/20260926093600_purchase_order_enums.sql` — pending
-- `supabase/migrations/20260926093700_purchase_orders.sql` — pending, fixed but not re-verified
-- `supabase/migrations/20260926093800_batch_lot_expiry.sql` — pending, never executed
+- `database/migrations/20260926093000_gst_hsn_invoice_lines.sql` — applied live
+- `database/migrations/20260926093100_qc_staff_role_enum.sql` — pending
+- `database/migrations/20260926093200_qc_staff_role_policies.sql` — pending
+- `database/migrations/20260926093300_order_delivery_and_proxy.sql` — pending
+- `database/migrations/20260926093400_dealer_region.sql` — pending
+- `database/migrations/20260926093500_credit_ageing_settings.sql` — pending
+- `database/migrations/20260926093600_purchase_order_enums.sql` — pending
+- `database/migrations/20260926093700_purchase_orders.sql` — pending, fixed but not re-verified
+- `database/migrations/20260926093800_batch_lot_expiry.sql` — pending, never executed
+

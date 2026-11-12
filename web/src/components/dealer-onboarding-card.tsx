@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 import type { DealerOnboardingRow, DealerOnboardingStage } from "../lib/data";
 
 type Props = {
@@ -138,14 +138,10 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
       setFailed(true);
       return;
     }
-    const supabase = createClient();
     await call("decision", async () => {
-      const { error } = await supabase.rpc("admin_record_dealer_credit_decision", {
-        p_dealer_id: record.dealer_id,
-        p_approved: decision === "approve",
-        p_note: note.trim() || null,
-      });
-      if (error) return error.message;
+      const res = await fetch("/api/dealer-onboarding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "credit_decision", p_dealer_id: record.dealer_id, p_credit_approved: decision === "approve", p_credit_limit: record.credit_limit_requested, p_note: note.trim() || null }) });
+      const json = await res.json();
+      if (!res.ok) return json.error ?? "Failed";
       setNote("");
       setMessage(
         decision === "approve"
@@ -159,17 +155,10 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
   async function submitRep(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canMapRep) return;
-    const supabase = createClient();
     await call("rep", async () => {
-      // A single column, through a function that names the refusal. Sending the
-      // whole dealer master to change one field would resend whatever a finance
-      // user changed in the meantime and route an admin's rep change through the
-      // commercial column guard, which answers about credit for a rep change.
-      const { error } = await supabase.rpc("admin_map_dealer_to_rep", {
-        p_dealer_id: record.dealer_id,
-        p_sales_rep_id: repId || null,
-      });
-      if (error) return error.message;
+      const res = await fetch("/api/dealer-onboarding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "map_rep", p_dealer_id: record.dealer_id, p_sales_rep_id: repId || null }) });
+      const json = await res.json();
+      if (!res.ok) return json.error ?? "Failed";
       setMessage(repId ? "Rep mapped." : "Rep cleared. The dealer is unmapped and only an admin can claim it.");
       return null;
     });
@@ -183,35 +172,17 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
       setFailed(true);
       return;
     }
-    // The edge function, not an RPC. Creating an auth user needs the service role
-    // key, which must never reach a browser, so the browser holds a session and
-    // the function holds the key. The function re-checks that the caller is an
-    // admin in the database before it does anything, and then calls
-    // admin_link_dealer_login, which is granted to service_role alone.
-    const accessToken = (await createClient().auth.getSession()).data.session?.access_token;
-    if (!accessToken) {
-      setMessage("Your session has expired. Sign in again to provision a login.");
-      setFailed(true);
-      return;
-    }
     await call("login", async () => {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/provision-dealer-login`,
-        {
-          method: "POST",
-          headers: {
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            dealer_id: record.dealer_id,
-            email: loginEmail.trim(),
-            password: loginPassword,
-            full_name: loginName.trim() || record.dealer_name,
-          }),
-        },
-      );
+      const response = await fetch("/api/dealer-login/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealer_id: record.dealer_id,
+          email: loginEmail.trim(),
+          password: loginPassword,
+          full_name: loginName.trim() || record.dealer_name,
+        }),
+      });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         return typeof body?.error === "string" ? body.error : `Provisioning failed (${response.status}).`;
@@ -223,10 +194,10 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
   }
 
   async function submitActivate() {
-    const supabase = createClient();
     await call("activate", async () => {
-      const { error } = await supabase.rpc("admin_activate_dealer", { p_dealer_id: record.dealer_id });
-      if (error) return error.message;
+      const res = await fetch("/api/dealer-onboarding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "activate", p_dealer_id: record.dealer_id }) });
+      const json = await res.json();
+      if (!res.ok) return json.error ?? "Failed";
       setMessage("Dealer activated. It can trade, and the approved limit is now its limit.");
       return null;
     });
@@ -239,13 +210,10 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
       setFailed(true);
       return;
     }
-    const supabase = createClient();
     await call("decline", async () => {
-      const { error } = await supabase.rpc("admin_decline_dealer_onboarding", {
-        p_dealer_id: record.dealer_id,
-        p_reason: declineReason.trim(),
-      });
-      if (error) return error.message;
+      const res = await fetch("/api/dealer-onboarding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "decline", p_dealer_id: record.dealer_id, p_decline_reason: declineReason.trim() }) });
+      const json = await res.json();
+      if (!res.ok) return json.error ?? "Failed";
       setDeclineReason("");
       setMessage("Onboarding declined. The dealer row stays, inactive, and the record is closed.");
       return null;
@@ -254,6 +222,9 @@ export function DealerOnboardingCard({ record, salesReps, dealerEmail }: Props) 
 
   return (
     <div className="rounded-2xl border border-[#e8ede6] p-5">
+      <div className="mb-3 flex justify-end">
+        <PdfHelp guide="17-dealer-onboarding" />
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-semibold">{record.dealer_name}</p>

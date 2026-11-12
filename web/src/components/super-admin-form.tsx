@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { UserDirectoryRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   user: UserDirectoryRow;
@@ -35,11 +35,9 @@ export function SuperAdminForm({ user }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_set_user_password", {
-      p_user_id: user.user_id,
-      p_password: newPassword,
-    });
+    const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_user_id: user.user_id, p_password: newPassword }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);

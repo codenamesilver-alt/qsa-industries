@@ -6,36 +6,49 @@ import type { Profile, UserRole } from "../lib/auth";
 import { isSuperuser } from "../lib/roles";
 
 const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string }>>> = {
-  // Organization is the one entry that is on every internal list and on no sales
-  // or dealer list. The six internal roles can all read the chart, which is the
-  // point of it: a warehouse clerk and a finance manager work out of the same
-  // shape of the company. Only admin gets the editor under it.
   admin: [
-    { href: "/internal", label: "Overview" },
-    { href: "/internal/inventory", label: "Inventory" },
-    { href: "/internal/purchasing", label: "Purchasing" },
-    { href: "/internal/production", label: "Production" },
-    { href: "/internal/quality", label: "Quality" },
-    { href: "/internal/finance", label: "Finance" },
-    { href: "/internal/orders", label: "Dispatch queue" },
-    { href: "/internal/delivery", label: "Delivery board" },
-    { href: "/internal/org-chart", label: "Organization" },
-    { href: "/internal/admin", label: "Administration" },
-    // People are their own route, for the same reason onboarding is. "Administration"
-    // means what the business sells; this means who works here. Keeping account
-    // creation at the bottom of the master data page meant finding a login meant
-    // scrolling past the entire product catalogue.
-    { href: "/internal/users", label: "Users & Roles" },
-    // Onboarding is its own route rather than a section of the admin master: it
-    // answers a different question, "what is between this dealer and trading",
-    // and that answer is a short queue rather than every product, price and user
-    // on one page.
+    { href: "/internal", label: "Dashboard" },
+    { href: "/internal/assets", label: "Assets" },
+    { href: "/internal/attendance", label: "Attendance" },
+    { href: "/internal/audit", label: "Audit log" },
+    { href: "/internal/bank", label: "Bank accounts" },
+    { href: "/internal/bank-statements", label: "Bank statements" },
+    { href: "/internal/communications", label: "Communications" },
+    { href: "/internal/credit-notes", label: "Credit notes" },
     { href: "/internal/admin/dealers", label: "Dealer onboarding" },
-    { href: "/sales/orders", label: "Sales orders" },
+    { href: "/internal/demand-forecasts", label: "Demand forecasts" },
+    { href: "/internal/departments", label: "Departments" },
+    { href: "/internal/delivery", label: "Delivery board" },
+    { href: "/internal/delivery-tracking", label: "Delivery tracking" },
+    { href: "/internal/designations", label: "Designations" },
+    { href: "/internal/discount-schemes", label: "Discount schemes" },
+    { href: "/internal/orders", label: "Dispatch queue" },
+    { href: "/internal/employees", label: "Employees" },
+    { href: "/internal/finance", label: "Finance" },
+    { href: "/internal/periods", label: "Financial periods" },
+    { href: "/internal/inventory", label: "Inventory" },
+    { href: "/internal/leads", label: "Leads" },
+    { href: "/internal/leave", label: "Leave" },
+    { href: "/internal/modules", label: "Modules hub" },
+    { href: "/internal/notifications", label: "Notifications" },
+    { href: "/internal/opportunities", label: "Opportunities" },
+    { href: "/internal/org-chart", label: "Organization" },
+    { href: "/internal/payroll", label: "Payroll" },
+    { href: "/internal/production", label: "Production" },
+    { href: "/internal/purchasing", label: "Purchasing" },
+    { href: "/internal/quality", label: "Quality" },
+    { href: "/internal/quotations", label: "Quotations" },
+    { href: "/internal/reorder-rules", label: "Reorder rules" },
+    { href: "/internal/roles-permissions", label: "Roles & permissions" },
     { href: "/sales/reports", label: "Reporting" },
+    { href: "/internal/payslips", label: "Salary slips" },
+    { href: "/sales/orders", label: "Sales orders" },
+    { href: "/internal/tickets", label: "Tickets" },
+    { href: "/internal/visit-reports", label: "Visit reports" },
+    { href: "/internal/settings", label: "Settings" },
   ],
   production_manager: [
-    { href: "/internal", label: "Overview" },
+    { href: "/internal", label: "Dashboard" },
     { href: "/internal/inventory", label: "Inventory" },
     { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/production", label: "Production" },
@@ -43,76 +56,57 @@ const linksByRole: Partial<Record<UserRole, Array<{ href: string; label: string 
     { href: "/internal/org-chart", label: "Organization" },
   ],
   inventory_manager: [
-    { href: "/internal", label: "Overview" },
+    { href: "/internal", label: "Dashboard" },
     { href: "/internal/inventory", label: "Inventory" },
     { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/internal/org-chart", label: "Organization" },
   ],
-  // qc_staff exists in the database role enum and in the SELECT policy on
-  // production_runs, but had no route and no nav entry until now, so a QC user
-  // could sign in and land nowhere they could act.
   qc_staff: [
-    { href: "/internal", label: "Overview" },
+    { href: "/internal", label: "Dashboard" },
     { href: "/internal/quality", label: "Quality" },
     { href: "/internal/org-chart", label: "Organization" },
   ],
-  // The delivery board is a separate route from the dispatch queue because it is
-  // a different question: dispatch asks which approved order needs a vehicle,
-  // delivery asks which vehicle has not been confirmed as received.
   logistics: [
-    { href: "/internal", label: "Overview" },
-    { href: "/internal/orders", label: "Dispatch queue" },
+    { href: "/internal", label: "Dashboard" },
     { href: "/internal/delivery", label: "Delivery board" },
+    { href: "/internal/orders", label: "Dispatch queue" },
     { href: "/internal/org-chart", label: "Organization" },
   ],
   finance: [
-    { href: "/internal", label: "Overview" },
-    { href: "/internal/purchasing", label: "Purchasing" },
+    { href: "/internal", label: "Dashboard" },
     { href: "/internal/finance", label: "Finance" },
     { href: "/internal/org-chart", label: "Organization" },
-    // Finance sees every dealer regardless of reporting line, so the reporting
-    // views are as much theirs as the director's. The amounts on that screen are
-    // the same realized/pipeline/outstanding split the finance screens already use.
+    { href: "/internal/purchasing", label: "Purchasing" },
     { href: "/sales/reports", label: "Reporting" },
   ],
   sales_rep: [
-    { href: "/sales", label: "Overview" },
+    { href: "/sales", label: "Dashboard" },
     { href: "/sales/orders", label: "Orders" },
     { href: "/sales/reports", label: "My reporting" },
   ],
-  // Team is manager-only, and deliberately not on the director's list. A director
-  // oversees managers, so reassigning a dealer between two managers' reps is an
-  // admin action; giving the director a screen whose writes the database refuses
-  // would be worse than not offering it.
   sales_manager: [
-    { href: "/sales", label: "Overview" },
+    { href: "/sales", label: "Dashboard" },
     { href: "/sales/orders", label: "Approvals" },
-    { href: "/sales/team", label: "Team" },
     { href: "/sales/reports", label: "Team reporting" },
+    { href: "/sales/team", label: "Team" },
   ],
-  // PRD Phase 4 asks for a sales director oversight dashboard. The director's own
-  // queue is where escalations wait, and this is the wider view across every
-  // manager: territory, team, and the credit picture they all sit inside.
   sales_director: [
-    { href: "/sales", label: "Overview" },
+    { href: "/sales", label: "Dashboard" },
     { href: "/sales/orders", label: "Director queue" },
     { href: "/sales/reports", label: "Oversight" },
   ],
   dealer: [
-    { href: "/dealer", label: "Overview" },
+    { href: "/dealer", label: "Dashboard" },
     { href: "/dealer/catalog", label: "Catalog" },
     { href: "/dealer/orders", label: "My orders" },
   ],
 };
 
-// A superuser gets the menu of the portal it is standing in, not one fixed list.
-// Reading the internal nav while looking at dealer pages is how you end up hunting
-// for a link that is not there.
 const superuserNavByPrefix: ReadonlyArray<readonly [string, Array<{ href: string; label: string }>]> = [
   [
     "/dealer",
     [
-      { href: "/dealer", label: "Overview" },
+      { href: "/dealer", label: "Dashboard" },
       { href: "/dealer/catalog", label: "Catalog" },
       { href: "/dealer/orders", label: "Orders" },
     ],
@@ -120,10 +114,10 @@ const superuserNavByPrefix: ReadonlyArray<readonly [string, Array<{ href: string
   [
     "/sales",
     [
-      { href: "/sales", label: "Overview" },
+      { href: "/sales", label: "Dashboard" },
       { href: "/sales/orders", label: "Orders & approvals" },
-      { href: "/sales/team", label: "Team" },
       { href: "/sales/reports", label: "Reporting" },
+      { href: "/sales/team", label: "Team" },
     ],
   ],
 ];
@@ -132,7 +126,9 @@ export function PortalNav({ profile }: { profile: Profile }) {
   const pathname = usePathname();
 
   let links: Array<{ href: string; label: string }>;
-  if (isSuperuser(profile.role)) {
+  if (profile.role === "admin") {
+    links = linksByRole.admin ?? [];
+  } else if (isSuperuser(profile.role)) {
     const match = superuserNavByPrefix.find(([prefix]) => pathname.startsWith(prefix));
     links = match ? match[1] : (linksByRole[profile.role] ?? []);
   } else {
@@ -140,20 +136,16 @@ export function PortalNav({ profile }: { profile: Profile }) {
   }
 
   return (
-    <nav
-      aria-label="Portal navigation"
-      className="flex flex-col gap-1 rounded-[1.75rem] bg-[#eef3e9] p-1.5 lg:min-h-0 lg:overflow-y-auto"
-    >
+    <nav aria-label="Portal navigation" className="nav grid gap-1.5">
       {links.map((link) => {
         const active = pathname === link.href;
-
         return (
           <Link
             aria-current={active ? "page" : undefined}
-            className={`rounded-[1.25rem] px-4 py-2.5 text-sm font-bold transition-all duration-200 ease-out ${
+            className={`flex items-center gap-3 rounded-[13px] px-3 py-2.5 text-[13px] transition-all duration-150 ${
               active
-                ? "bg-[#15221b] text-[#d8f35b] shadow-[0_8px_20px_rgba(21,34,27,0.18)]"
-                : "text-[#4f6254] hover:bg-white hover:text-[#15221b]"
+                ? "bg-[#baff48] font-bold text-[#25311f] shadow-[4px_4px_10px_#d9dcd5,-4px_-4px_10px_#fff]"
+                : "text-[#758079] hover:bg-[#e9ebe4] hover:text-[#27312d]"
             }`}
             href={link.href}
             key={link.href}

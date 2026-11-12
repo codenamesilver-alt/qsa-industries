@@ -1,7 +1,7 @@
 # Deployment
 
 Target: a single Linux VPS running Node.js behind Nginx, with the app managed by
-PM2. The database is Supabase (PostgreSQL), reached over the network rather than
+PM2. The database is database (PostgreSQL), reached over the network rather than
 running on the same host.
 
 Nothing here has been run against a real server yet. The scripts are written and
@@ -50,7 +50,7 @@ Create `.env` at the repository root. This holds the database connection and the
 service role key, and is gitignored:
 
 ```
-PGHOST=db.<project-ref>.supabase.co
+PGHOST=db.<project-ref>.database.co
 PGPORT=5432
 PGDATABASE=postgres
 PGUSER=postgres
@@ -63,8 +63,8 @@ Create `web/.env.production.local`, also gitignored. Next.js inlines these at
 build time, so a change to either value requires a rebuild, not just a restart:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<anon publishable key>
+NEXT_PUBLIC_database_URL=https://<project-ref>.database.co
+NEXT_PUBLIC_database_PUBLISHABLE_KEY=<anon publishable key>
 ```
 
 Neither file is in the repository. Confirm they are ignored before the first
@@ -196,7 +196,7 @@ once a day:
 30 2 * * * cd /home/deploy/qsaindustries && /usr/bin/npm run db:backup >> /home/deploy/qsaindustries/logs/backup.log 2>&1
 ```
 
-The dump is data only. The schema comes from `supabase/migrations`, so a restore
+The dump is data only. The schema comes from `database/migrations`, so a restore
 replays the migrations and then loads the dump on top. That makes the dump small
 and reviewable, and it means a dump and a migration set are only compatible at
 the same version, so keep the repository and its backups together.
@@ -218,7 +218,7 @@ tail -f /var/log/nginx/qsa.error.log
 
 Watch for repeated restarts. `ecosystem.config.cjs` restarts a process at most 10
 times and gives up if it cannot stay up for 20 seconds, so a crash loop becomes a
-stopped process rather than an invisible loop. The Supabase dashboard's
+stopped process rather than an invisible loop. The database dashboard's
 connection count and query log are the other half of the picture: a Next.js
 cluster of N workers will hold N database pools.
 
@@ -228,7 +228,8 @@ cluster of N workers will hold N database pools.
 - The database password in `.env`.
 - The service role key in `PG_ADMIN_PUBLISHABLE_KEY`, which bypasses row level
   security and is the most sensitive value in the repository's history.
-- The Supabase anon and publishable keys if any have been committed anywhere.
+- The database anon and publishable keys if any have been committed anywhere.
 
 The demo dataset is also not anonymised. Remove it, or replace it with real
 records, before a production user can see it.
+

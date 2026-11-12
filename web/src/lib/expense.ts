@@ -1,7 +1,7 @@
 // The client-safe half of the expense module.
 //
 // This file exists because of one constraint that is easy to trip over: lib/data.ts
-// imports the server Supabase client, so a "use client" component that imports anything
+// imports the server database client, so a "use client" component that imports anything
 // from it by value drags next/headers into the browser bundle and the build fails. The
 // established pattern in this repo is to take only a type from data.ts, which is erased
 // at compile time and therefore harmless -- see designation-manager.tsx.

@@ -2,9 +2,10 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+
 import type { OrgChartRow, OrgStaffMember } from "../lib/data";
 import { flattenOrgTree, roleLabel } from "../lib/org-tree";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   rows: OrgChartRow[];
@@ -61,11 +62,9 @@ export function OrgChartBuilder({ rows, roster }: Props) {
     await call(
       "root",
       async () => {
-        const { error } = await createClient().rpc("admin_create_org_position", {
-          p_parent_id: null,
-          p_title: newTitle.trim(),
-          p_user_id: newUser || null,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", p_parent_id: null, p_title: newTitle.trim(), p_user_id: newUser || null }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         setNewTitle("");
         setNewUser("");
@@ -82,10 +81,9 @@ export function OrgChartBuilder({ rows, roster }: Props) {
     await call(
       "clear",
       async () => {
-        const { error } = await createClient().rpc("admin_delete_org_position", {
-          p_position_id: root.id,
-          p_cascade: true,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", p_position_id: root.id }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         return null;
       },
@@ -99,6 +97,7 @@ export function OrgChartBuilder({ rows, roster }: Props) {
     <div className="space-y-6">
       {!root ? (
         <form className="space-y-4" onSubmit={createRoot}>
+      <div className="flex justify-end"><PdfHelp guide="18-org-chart" /></div>
           <p className="text-sm text-[#5d6b60]">
             The chart is empty. It has one top head, chosen from your staff list, and everything else hangs
             below that head.
@@ -205,8 +204,6 @@ function PositionRow({
   const [moveTo, setMoveTo] = useState("");
   const [rowMessage, setRowMessage] = useState("");
 
-  const supabase = createClient();
-
   // A move cannot offer the post itself, and cannot offer anything under it, or
   // the database would refuse it for putting a post above its own reports. The
   // picker is derived from the same tree the chart is drawn from, so the two cannot
@@ -221,12 +218,9 @@ function PositionRow({
     await onCall(
       `save:${row.id}`,
       async () => {
-        const { error } = await supabase.rpc("admin_update_org_position", {
-          p_position_id: row.id,
-          p_title: title.trim() === "" ? null : title.trim(),
-          p_user_id: userId === "" ? null : userId,
-          p_clear_user: cleared,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "update", p_position_id: row.id, p_title: title.trim() === "" ? null : title.trim(), p_user_id: userId === "" ? null : userId }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         return null;
       },
@@ -240,11 +234,9 @@ function PositionRow({
     await onCall(
       `add:${row.id}`,
       async () => {
-        const { error } = await supabase.rpc("admin_create_org_position", {
-          p_parent_id: row.id,
-          p_title: childTitle.trim(),
-          p_user_id: childUser || null,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", p_parent_id: row.id, p_title: childTitle.trim(), p_user_id: childUser || null }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         setChildTitle("");
         setChildUser("");
@@ -260,10 +252,9 @@ function PositionRow({
     await onCall(
       `move:${row.id}`,
       async () => {
-        const { error } = await supabase.rpc("admin_move_org_position", {
-          p_position_id: row.id,
-          p_new_parent_id: moveTo,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", p_position_id: row.id, p_new_parent_id: moveTo }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         setMoveTo("");
         return null;
@@ -281,10 +272,9 @@ function PositionRow({
     await onCall(
       `delete:${row.id}`,
       async () => {
-        const { error } = await supabase.rpc("admin_delete_org_position", {
-          p_position_id: row.id,
-          p_cascade: false,
-        });
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", p_position_id: row.id }) });
+        const json = await res.json();
+        const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         return null;
       },

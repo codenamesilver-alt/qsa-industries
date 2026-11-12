@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import { roleLabel } from "../lib/org-tree";
 import type { DesignationRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   managers: Array<{ id: string; full_name: string; role: string }>;
@@ -30,7 +30,7 @@ type Props = {
 // here, not echoed back, and not recoverable afterwards, so the field is cleared on
 // success and the message says so. There is no reset link in this screen on
 // purpose: sending a new password by email is how a shared secret ends up in an
-// inbox, and Supabase's own recovery flow is the way to do that.
+// inbox, and the application's own recovery flow is the way to do that.
 export function StaffLoginForm({ managers, designations }: Props) {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
@@ -78,17 +78,9 @@ export function StaffLoginForm({ managers, designations }: Props) {
     setFailed(false);
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_create_user_account", {
-      p_email: email.trim(),
-      p_full_name: fullName.trim(),
-      p_password: password,
-      p_role: role,
-      p_designation_id: designationId || null,
-      p_phone: phone.trim() || null,
-      p_is_active: true,
-      p_manager_id: wantedManagerRole ? effectiveManagerId || null : null,
-    });
+    const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_email: email.trim(), p_full_name: fullName.trim(), p_password: password, p_role: role, p_designation_id: designationId || null, p_phone: phone.trim() || null, p_is_active: true, p_manager_id: wantedManagerRole ? effectiveManagerId || null : null }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -109,6 +101,7 @@ export function StaffLoginForm({ managers, designations }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="24-staff-login" /></div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Full name

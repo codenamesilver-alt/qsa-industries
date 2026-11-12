@@ -2,6 +2,7 @@ import { EmptyState, MetricCard } from "../../../components/data-panel";
 import { CollapsiblePanel, PanelStack } from "../../../components/panel-stack";
 import { PortalShell } from "../../../components/portal-shell";
 import { PurchaseOrderForm } from "../../../components/purchase-order-form";
+import { PurchaseInvoiceForm } from "../../../components/purchase-invoice-form";
 import { PurchaseOrderReceiveForm } from "../../../components/purchase-order-receive-form";
 import { PurchaseOrderRegister } from "../../../components/purchasing-lists";
 import { RecordPicker, type PickerItem } from "../../../components/record-picker";
@@ -109,6 +110,18 @@ export default async function PurchasingPage() {
               placeholder="Search by PO number or supplier"
               searchLabel="Search purchase orders awaiting receipt"
             />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            description="Record a supplier invoice (raw material bill) with taxable amount, GST and total. Can link to a PO."
+            id="invoice"
+            title="Record purchase invoice"
+          >
+            {canWrite ? (
+              <PurchaseInvoiceForm pos={purchaseOrders.map((p) => ({ id: p.id, po_number: p.po_number }))} products={rawMaterials} />
+            ) : (
+              <p className="text-sm text-[#718075]">Recording purchase invoices is limited to inventory and admin.</p>
+            )}
           </CollapsiblePanel>
 
           <CollapsiblePanel

@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { DealerRow } from "../lib/data";
 import { formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   dealer: DealerRow;
@@ -47,7 +47,6 @@ export function DealerCreditForm({ dealer, canManageCommercial, canAssignRep, sa
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
     const patch: Record<string, unknown> = {};
     if (canManageCommercial) {
       patch.credit_limit = Number(creditLimit);
@@ -58,7 +57,9 @@ export function DealerCreditForm({ dealer, canManageCommercial, canAssignRep, sa
     if (canAssignRep) {
       patch.sales_rep_id = salesRepId || null;
     }
-    const { error } = await supabase.from("dealers").update(patch).eq("id", dealer.id);
+    const res = await fetch(`/api/dealers/${dealer.id}/credit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patch }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -71,6 +72,7 @@ export function DealerCreditForm({ dealer, canManageCommercial, canAssignRep, sa
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="15-dealer-credit" /></div>
       {canManageCommercial ? (
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-semibold text-[#334536]">

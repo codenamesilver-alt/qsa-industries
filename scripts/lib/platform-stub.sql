@@ -1,8 +1,8 @@
--- Minimal stand-in for the objects a Supabase project provides in every
+-- Minimal stand-in for the objects a database project provides in every
 -- database, so the migrations can be replayed into a scratch database (or a
 -- plain local PostgreSQL) that does not have them.
 --
--- A real Supabase project already has all of this, so this file is a no-op
+-- A real database project already has all of this, so this file is a no-op
 -- there. It exists because two things the migrations depend on are easy to miss
 -- when rebuilding from empty:
 --
@@ -76,7 +76,7 @@ create table if not exists auth.identities (
 create unique index if not exists identities_provider_id_provider_key
   on auth.identities (provider_id, provider);
 
--- Supabase reads the authenticated user id out of the verified JWT claim.
+-- database reads the authenticated user id out of the verified JWT claim.
 create or replace function auth.uid() returns uuid
   language sql
   stable
@@ -117,7 +117,7 @@ create table if not exists storage.objects (
 create unique index if not exists objects_bucket_id_name_key
   on storage.objects (bucket_id, name);
 
--- The real tables are owned by supabase_storage_admin and RLS-protected, which is
+-- The real tables are owned by database_storage_admin and RLS-protected, which is
 -- why the expense migration reaches them through policies rather than grants.
 alter table storage.objects enable row level security;
 
@@ -129,3 +129,4 @@ grant usage on schema auth to anon, authenticated, service_role;
 grant usage on schema storage to anon, authenticated, service_role;
 grant select, insert on storage.buckets to service_role;
 grant select, insert, update, delete on storage.objects to authenticated, service_role;
+

@@ -1,5 +1,5 @@
 // Role vocabulary and the pure guard predicates, kept apart from auth.ts on purpose.
-// auth.ts reaches next/headers through the server Supabase client, so a client
+// auth.ts reaches next/headers through the server database client, so a client
 // component may not import it for a value; a type-only import is erased and always
 // was fine. Anything a client component calls at runtime lives here.
 

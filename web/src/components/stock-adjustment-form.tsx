@@ -2,8 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { ProductRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 export function StockAdjustmentForm({ products }: { products: ProductRow[] }) {
   const router = useRouter();
@@ -18,16 +18,20 @@ export function StockAdjustmentForm({ products }: { products: ProductRow[] }) {
     event.preventDefault();
     setMessage("");
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("create_stock_adjustment", {
-      target_product_id: productId,
-      adjustment_quantity: Number(quantity),
-      adjustment_movement_type: movementType,
-      adjustment_reason: reason,
+    const res = await fetch("/api/stock/adjust", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_product_id: productId,
+        adjustment_quantity: Number(quantity),
+        adjustment_movement_type: movementType,
+        adjustment_reason: reason,
+      }),
     });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       return;
     }
     setQuantity("");
@@ -38,6 +42,7 @@ export function StockAdjustmentForm({ products }: { products: ProductRow[] }) {
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="10-stock-adjustment" /></div>
       <label className="text-sm font-semibold text-[#334536]">
         Product
         <select

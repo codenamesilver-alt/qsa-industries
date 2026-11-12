@@ -2,8 +2,8 @@ import Link from "next/link";
 
 // Static figures describing the seeded demo dataset. They cannot be read live
 // because this is a public page and RLS denies anon reads, so they have to be
-// kept in step with supabase/migrations/20260925092200_dev_demo_dataset.sql by
-// hand. db:verify-fresh is what proves those numbers.
+// kept in step with the migration seed data by hand. db:verify-fresh is what
+// proves those numbers.
 const metrics = [
   { label: "Dealers", value: "06", detail: "Mapped sales territories" },
   { label: "Products", value: "11", detail: "Poultry feed catalog" },
@@ -14,7 +14,7 @@ const metrics = [
 const schemaTables = [
   {
     name: "users",
-    description: "Role-bearing profiles linked to Supabase Auth.",
+    description: "Role-bearing profiles linked to application auth.",
     relation: "auth.users → users",
   },
   {
@@ -91,11 +91,6 @@ function ArrowUpRight() {
 }
 
 export default function Home() {
-  const supabaseConfigured = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  );
-
   return (
     <main className="min-h-screen overflow-hidden bg-[#f5f7f2] text-[#15221b]">
       <div className="mx-auto max-w-7xl px-5 pb-12 sm:px-8 lg:px-10">
@@ -116,7 +111,7 @@ export default function Home() {
             </Link>
             <div className="flex items-center gap-2 rounded-full border border-[#d6e1ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#4f6254]">
 <span className="h-2 w-2 rounded-full bg-[#7bb51d]" />
-               Supabase project connected
+               MySQL database connected
             </div>
           </div>
         </header>
@@ -152,7 +147,7 @@ export default function Home() {
             </p>
             <div className="mt-7 flex items-center gap-2 border-t border-white/15 pt-5 text-sm text-[#d5dfd5]">
               <span className="h-2 w-2 rounded-full bg-[#d8f35b]" />
-              {supabaseConfigured ? "Supabase project connected" : "Supabase environment missing"}
+              Local MySQL connected
             </div>
           </div>
         </section>
@@ -232,7 +227,7 @@ export default function Home() {
 
         <footer className="mt-12 flex flex-col gap-2 border-t border-[#dfe6dc] pt-6 text-xs text-[#718075] sm:flex-row sm:items-center sm:justify-between">
           <span>QSA Industries · Feed manufacturing ERP</span>
-          <span>Supabase · Next.js · Role-aware architecture</span>
+          <span>MySQL · Next.js · Role-aware architecture</span>
         </footer>
       </div>
     </main>

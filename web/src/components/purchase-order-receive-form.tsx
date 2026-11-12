@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { PurchaseOrderRow } from "../lib/data";
 import { formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 // receive_purchase_order takes line ids, not product ids, and refuses a receipt
 // larger than the open quantity on that line. Both are enforced again in the
@@ -33,11 +33,9 @@ export function PurchaseOrderReceiveForm({ order }: { order: PurchaseOrderRow })
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("receive_purchase_order", {
-      p_purchase_order_id: order.id,
-      p_lines: receipts.map((entry) => ({ line_id: entry.line.id, quantity: entry.quantity })),
-    });
+    const res = await fetch(`/api/purchase-orders/${order.id}/receive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_lines: receipts.map((entry) => ({ line_id: entry.line.id, quantity: entry.quantity })) }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -55,6 +53,7 @@ export function PurchaseOrderReceiveForm({ order }: { order: PurchaseOrderRow })
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="13-po-receive" /></div>
       <div className="space-y-3">
         {openLines.map((line) => {
           const open = Number(line.quantity) - Number(line.quantity_received);

@@ -2,8 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+
 import type { DealerOnboardingRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   // Null starts a new onboarding. A row edits one that is still open.
@@ -89,36 +90,19 @@ export function DealerOnboardingForm({ record }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-
     // Two functions, not one merged call. admin_start_dealer_onboarding owns the
     // dealer master half at creation time; admin_edit_dealer_onboarding owns the
     // GSTIN, PAN and requested limit afterwards, and refuses once a decision
     // exists. Folding them together would mean every keystroke in the edit passed
     // through the finance facing admin_upsert_dealer, whose guard splits the
     // commercial columns away from the rest.
-    const { error } = isEdit
-      ? await supabase.rpc("admin_edit_dealer_onboarding", {
-          p_dealer_id: record.dealer_id,
-          p_gstin: gstinValue || null,
-          p_pan: panValue || null,
-          p_credit_limit_requested: requestedValue,
-        })
-      : await supabase.rpc("admin_start_dealer_onboarding", {
-          p_name: name.trim(),
-          p_region: region.trim(),
-          p_gstin: gstinValue || null,
-          p_pan: panValue || null,
-          p_credit_limit_requested: requestedValue,
-          p_contact_person: contact.trim() || null,
-          p_phone: phone.trim() || null,
-          p_email: email.trim() || null,
-          p_address_line1: line1.trim() || null,
-          p_address_line2: line2.trim() || null,
-          p_city: city.trim() || null,
-          p_state: state.trim() || null,
-          p_postal_code: postal.trim() || null,
-        });
+    const endpoint = isEdit ? "/api/dealer-onboarding" : "/api/dealer-onboarding";
+    const payload = isEdit
+      ? { action: "edit", p_dealer_id: record.dealer_id, p_credit_limit_requested: requestedValue }
+      : { action: "start", p_name: name.trim(), p_region: region.trim(), p_gstin: gstinValue || null, p_pan: panValue || null, p_credit_limit_requested: requestedValue, p_contact_person: contact.trim() || null, p_phone: phone.trim() || null, p_email: email.trim() || null, p_address_line1: line1.trim() || null, p_address_line2: line2.trim() || null, p_city: city.trim() || null, p_state: state.trim() || null, p_postal_code: postal.trim() || null };
+    const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
 
     setLoading(false);
     if (error) {
@@ -158,6 +142,7 @@ export function DealerOnboardingForm({ record }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="17-dealer-onboarding" /></div>
       {!isEdit ? (
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-semibold text-[#334536]">

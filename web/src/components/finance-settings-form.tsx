@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { FinanceSettingsRow } from "../lib/data";
 import { formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 // update_finance_settings treats a null argument as "leave this alone", which is
 // how the screen sends only the field that was edited. Clearing a bucket to switch
@@ -42,18 +42,22 @@ export function FinanceSettingsForm({ settings }: { settings: FinanceSettingsRow
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("update_finance_settings", {
-      p_ageing_grace_days: graceDays.trim() === "" ? null : Number(graceDays),
-      p_ageing_bucket_1_days: bucket1.trim() === "" ? null : Number(bucket1),
-      p_ageing_bucket_2_days: bucket2.trim() === "" ? null : Number(bucket2),
-      p_ageing_bucket_3_days: bucket3.trim() === "" ? null : Number(bucket3),
-      p_credit_counts_current_invoices: countsCurrent,
-      p_clear_ageing_buckets: clearBuckets,
+    const res = await fetch("/api/finance/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_ageing_grace_days: graceDays.trim() === "" ? null : Number(graceDays),
+        p_ageing_bucket_1_days: bucket1.trim() === "" ? null : Number(bucket1),
+        p_ageing_bucket_2_days: bucket2.trim() === "" ? null : Number(bucket2),
+        p_ageing_bucket_3_days: bucket3.trim() === "" ? null : Number(bucket3),
+        p_credit_counts_current_invoices: countsCurrent,
+        p_clear_ageing_buckets: clearBuckets,
+      }),
     });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -63,6 +67,7 @@ export function FinanceSettingsForm({ settings }: { settings: FinanceSettingsRow
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="21-finance-settings" /></div>
       <div className="rounded-2xl border border-[#e8ede6] p-4">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#819083]">Grace period</p>
         <label className="mt-3 block text-sm font-semibold text-[#334536]">

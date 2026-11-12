@@ -58,7 +58,7 @@ done
 
 [ -f .env ] || fail ".env is missing. See README for the required variables."
 [ -f web/.env.production.local ] || \
-    fail "web/.env.production.local is missing. It holds NEXT_PUBLIC_SUPABASE_* values."
+    fail "web/.env.production.local is missing. It holds NEXT_PUBLIC_database_* values."
 
 if [ -n "$(git status --porcelain)" ]; then
     printf 'WARNING: the working tree has uncommitted changes.\n'
@@ -115,7 +115,7 @@ npm run --silent db:migrate
 log "Building the web app"
 
 # NEXT_PUBLIC_* values are inlined at build time, so the build is where a
-# changed Supabase URL or key actually takes effect.
+# changed database URL or key actually takes effect.
 npm --prefix web run --silent build
 
 # ------------------------------------------------------------------ reload --

@@ -261,7 +261,7 @@ than carrying a redundant constraint.
 Five migrations were applied after the fresh replay was green.
 
 ```
-target postgres @ aws-0-ap-northeast-1.pooler.supabase.com: 30 applied, 5 pending
+target postgres @ aws-0-ap-northeast-1.pooler.database.com: 30 applied, 5 pending
 
 OK  20260926100000_purchase_order_total_fix.sql               (679ms)
 OK  20260926100100_product_hsn_required.sql                  (654ms)
@@ -346,7 +346,7 @@ All 11 products and all 22 invoice lines carry a valid code.
 | Suites covering the 20260926 features | 1 of 1 (113 assertions) |
 | Defects found by writing the tests | 5 |
 | Deliberate breaks proven to fail | 4 of 4 |
-| Uncommitted files | 18 entries (14 migrations, `supabase/tests/stage11_...`, `docs/`, `reports/`, and a modified `scripts/db-verify-fresh.mjs`) |
+| Uncommitted files | 18 entries (14 migrations, `database/tests/stage11_...`, `docs/`, `reports/`, and a modified `scripts/db-verify-fresh.mjs`) |
 
 ## Notes carried forward
 
@@ -371,3 +371,4 @@ here:
 - scheduled, restorable backups
 - the user interface against the new schema
 - and whatever `docs/BUILD_PLAN.md` schedules after milestone 4
+

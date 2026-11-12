@@ -2,9 +2,9 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { ProductRow } from "../lib/data";
 import { businessDate, formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 type LineDraft = { productId: string; quantity: string; unitPrice: string };
 
@@ -65,18 +65,9 @@ export function PurchaseOrderForm({ products }: { products: ProductRow[] }) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("create_purchase_order", {
-      p_supplier_name: supplierName.trim(),
-      p_supplier_gstin: supplierGstin.trim() || null,
-      p_expected_date: expectedDate || null,
-      p_notes: notes.trim() || null,
-      p_lines: usableLines.map((line) => ({
-        product_id: line.productId,
-        quantity: Number(line.quantity),
-        unit_price: Number(line.unitPrice),
-      })),
-    });
+    const res = await fetch("/api/purchase-orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_supplier_name: supplierName.trim(), p_supplier_gstin: supplierGstin.trim() || null, p_expected_date: expectedDate || null, p_notes: notes.trim() || null, p_lines: usableLines.map((line) => ({ product_id: line.productId, quantity: Number(line.quantity), unit_price: Number(line.unitPrice) })) }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -94,6 +85,7 @@ export function PurchaseOrderForm({ products }: { products: ProductRow[] }) {
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="12-purchase-orders" /></div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className="text-sm font-semibold text-[#334536]">
           Supplier

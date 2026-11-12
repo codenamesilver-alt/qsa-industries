@@ -1,3 +1,5 @@
+import { PdfHelp } from "./pdf-help";
+
 export function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-3xl border border-[#dfe6dc] bg-white p-6">
@@ -12,21 +14,24 @@ export function DataPanel({
   title,
   description,
   children,
+  helpGuide,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  helpGuide?: string;
 }) {
   return (
-    <section className="rounded-[2rem] border border-[#dfe6dc] bg-white p-6 sm:p-8">
+    <section className="flex h-full flex-col rounded-[2rem] border border-[#dfe6dc] bg-white p-6 sm:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#6f8c3b]">QSA control panel</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">{title}</h2>
         </div>
+        {helpGuide ? <PdfHelp guide={helpGuide} /> : null}
         {description ? <p className="max-w-md text-right text-sm leading-6 text-[#718075]">{description}</p> : null}
       </div>
-      <div className="mt-7">{children}</div>
+      <div className="mt-7 flex-1">{children}</div>
     </section>
   );
 }

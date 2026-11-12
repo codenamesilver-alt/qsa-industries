@@ -1,24 +1,24 @@
-# QSA ERP — 10-Day Stage-Wise Build Plan (Supabase)
+# QSA ERP — 10-Day Stage-Wise Build Plan (database)
 
 ## How to use this document
 
-Each day below is a **self-contained prompt** you can copy-paste directly into opencode (or any AI coding agent) once you've created the Supabase project and have your credentials ready. Build and test each day's deliverable before moving to the next — don't skip ahead, since later stages depend on earlier schema and auth decisions.
+Each day below is a **self-contained prompt** you can copy-paste directly into opencode (or any AI coding agent) once you've created the database project and have your credentials ready. Build and test each day's deliverable before moving to the next — don't skip ahead, since later stages depend on earlier schema and auth decisions.
 
 **Before Day 1:**
 
-1. Create a new Supabase project
+1. Create a new database project
 2. Note down: Project URL, `anon` public key, `service_role` key, and Postgres connection string
 3. Have these ready to hand to opencode when you start Day 1
 
-Each prompt below assumes opencode has read/write access to your Supabase project (via credentials or Supabase MCP/CLI) and can create tables, RLS policies, and a Next.js (or your chosen framework) frontend connected to Supabase.
+Each prompt below assumes opencode has read/write access to your database project (via credentials or database MCP/CLI) and can create tables, RLS policies, and a Next.js (or your chosen framework) frontend connected to database.
 
-## Day 1 — Supabase Schema Foundation
+## Day 1 — database Schema Foundation
 
 > **Prompt for opencode:**
 >
-> I'm building an ERP for a poultry feed manufacturer (QSA Industries) using Supabase as the backend. Set up the foundational database schema in Supabase. Create these tables with appropriate columns, primary/foreign keys, and constraints:
+> I'm building an ERP for a poultry feed manufacturer (QSA Industries) using database as the backend. Set up the foundational database schema in database. Create these tables with appropriate columns, primary/foreign keys, and constraints:
 >
-> - `users` (linked to Supabase Auth `auth.users`, with `role` enum: admin, production\_manager, inventory\_manager, sales\_rep, sales\_manager, sales\_director, logistics, finance, dealer)
+> - `users` (linked to database Auth `auth.users`, with `role` enum: admin, production\_manager, inventory\_manager, sales\_rep, sales\_manager, sales\_director, logistics, finance, dealer)
 > - `user_hierarchy` (maps sales\_rep → sales\_manager → sales\_director, with `manager_id` self-referencing `users`)
 > - `dealers` (name, contact info, address, credit\_limit\_override if any, mapped `sales_rep_id`, status)
 > - `products` (SKU, name, category, unit of measure, price, active flag)
@@ -28,23 +28,23 @@ Each prompt below assumes opencode has read/write access to your Supabase projec
 >
 > - Use UUID primary keys
 > - Add `created_at` / `updated_at` timestamps on every table
-> - Write this as Supabase migration SQL files (not just describing it)
+> - Write this as database migration SQL files (not just describing it)
 > - Do NOT set up Row Level Security policies yet — that's tomorrow's task
-> - Seed a few sample rows (2-3 dealers, 5 products, 1 admin user, 1 sales director, 2 managers, 4 reps) so I can verify the schema visually in Supabase Table Editor
+> - Seed a few sample rows (2-3 dealers, 5 products, 1 admin user, 1 sales director, 2 managers, 4 reps) so I can verify the schema visually in database Table Editor
 >
-> Deliverable: migration files applied to my Supabase project + a short summary of the schema (table names, key relationships) so I can verify it before Day 2.
+> Deliverable: migration files applied to my database project + a short summary of the schema (table names, key relationships) so I can verify it before Day 2.
 
-**Acceptance check before moving on:** open Supabase Table Editor and confirm all 4-5 tables exist with sample data and correct foreign keys.
+**Acceptance check before moving on:** open database Table Editor and confirm all 4-5 tables exist with sample data and correct foreign keys.
 
 ## Day 2 — Auth & Role-Based Access (RBAC)
 
 > **Prompt for opencode:**
 >
-> Using the schema from Day 1, set up authentication and role-based access control across the three portals (Internal Operations, Sales & Management, Dealer) using Supabase Auth.
+> Using the schema from Day 1, set up authentication and role-based access control across the three portals (Internal Operations, Sales & Management, Dealer) using database Auth.
 >
 > Requirements:
 >
-> - Configure Supabase Auth for email/password login
+> - Configure database Auth for email/password login
 > - On signup/user creation, link `auth.users` to our `users` table with the correct `role`
 > - Write Row Level Security (RLS) policies so:
 >   - Dealers can only see/edit their own dealer record and their own orders (once orders exist)
@@ -63,15 +63,15 @@ Each prompt below assumes opencode has read/write access to your Supabase projec
 
 > **Prompt for opencode:**
 >
-> Build the inventory module on top of the existing Supabase schema.
+> Build the inventory module on top of the existing database schema.
 >
 > Requirements:
 >
 > - Create tables: `stock_levels` (product\_id, current\_quantity, unit), `stock_movements` (product\_id, quantity, movement\_type: in/out, source: production/sales/adjustment, reference\_id, created\_by, created\_at)
-> - Every stock movement should update `stock_levels` automatically (use a Postgres trigger or Supabase Edge Function)
+> - Every stock movement should update `stock_levels` automatically (use a Postgres trigger or database Edge Function)
 > - Build an Internal Portal screen (Inventory Manager role) to: view current stock levels for all products, manually add a stock adjustment (in/out) with a reason, view stock movement history per product
 > - Add a low-stock threshold field per product and flag products below it visually
-> - Expose current stock levels as a query/view the Dealer Portal catalog will use later (real-time, so use Supabase real-time subscriptions or simple polling)
+> - Expose current stock levels as a query/view the Dealer Portal catalog will use later (real-time, so use database real-time subscriptions or simple polling)
 >
 > Deliverable: working Inventory screen in the Internal Portal where I can add a manual stock-in, see the level update immediately, and see it reflected in stock\_movements history.
 
@@ -180,7 +180,7 @@ Each prompt below assumes opencode has read/write access to your Supabase projec
 > - Sales Director / Manager dashboard: sales trends over time (by day/week/month), orders by status, top dealers by volume, credit exposure by dealer
 > - Inventory dashboard: current stock levels, low-stock products, stock movement trends
 > - Production dashboard: yield trends (output vs raw material input) over time
-> - Use Supabase views or materialized views for aggregations where it makes sense, and a charting library (e.g. Recharts) on the frontend
+> - Use database views or materialized views for aggregations where it makes sense, and a charting library (e.g. Recharts) on the frontend
 > - Make sure each dashboard respects the RBAC set up on Day 2 (a manager only sees their team's data, director sees all sales data, etc.)
 >
 > Deliverable: three role-appropriate dashboards (sales, inventory, production) showing real data from the system built so far.
@@ -198,10 +198,11 @@ Each prompt below assumes opencode has read/write access to your Supabase projec
 > - Build a Tally export function: generate invoices and payments in a format Tally can import (CSV/XML per Tally's import spec — ask me for QSA's exact Tally version/format if unknown, and stub the exact mapping as a TODO)
 > - Run through every workflow end-to-end once more: dealer order → rep → manager approval/override → director escalation → dispatch → invoice → payment → dashboard reflects it
 > - Fix any bugs found; tighten RLS policies (test that no role can see data outside its scope)
-> - Set up environment variables/secrets properly (no hardcoded Supabase keys in the frontend beyond the public `anon` key)
+> - Set up environment variables/secrets properly (no hardcoded database keys in the frontend beyond the public `anon` key)
 > - Deploy the application to the Hostinger VPS (set up Node/Next.js process manager e.g. PM2, reverse proxy e.g. Nginx, HTTPS via Let's Encrypt)
 > - Provide a short README covering: how to deploy updates, environment variables needed, and default admin login
 >
 > Deliverable: the full system live on the Hostinger VPS, accessible via a domain/IP, with all three portals working end-to-end.
 
 **Acceptance check before moving on:** access all three portals from outside your local network, log in with each role, and run one full order end-to-end on the live deployment.
+

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { businessDate } from "../lib/format";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 
 export function GenerateInvoiceButton({ orderId }: { orderId: string }) {
   const router = useRouter();
@@ -16,8 +16,9 @@ export function GenerateInvoiceButton({ orderId }: { orderId: string }) {
   async function generateInvoice() {
     setLoading(true);
     setMessage("");
-    const supabase = createClient();
-    const { error } = await supabase.rpc("generate_invoice", { target_order_id: orderId });
+    const res = await fetch("/api/finance/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_order_id: orderId }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setFailed(true);
@@ -66,14 +67,9 @@ export function DealerPaymentForm({ dealerId }: { dealerId: string }) {
     }
     setLoading(true);
     setMessage("");
-    const supabase = createClient();
-    const { error } = await supabase.rpc("record_dealer_payment", {
-      target_dealer_id: dealerId,
-      payment_amount: Number(amount),
-      payment_date_value: businessDate(),
-      payment_mode_value: mode,
-      payment_reference: reference || null,
-    });
+    const res = await fetch("/api/finance/dealer-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_dealer_id: dealerId, payment_amount: Number(amount), payment_date_value: businessDate(), payment_mode_value: mode, payment_reference: reference || null }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setFailed(true);
@@ -89,6 +85,7 @@ export function DealerPaymentForm({ dealerId }: { dealerId: string }) {
 
   return (
     <form className="grid gap-2 md:grid-cols-[0.7fr_1fr_1fr_auto]" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="23-tally-export" /></div>
       <input
         className="rounded-xl border border-[#d6e1ce] px-3 py-2 text-sm"
         min="0.01"
@@ -142,14 +139,9 @@ export function PaymentForm({ invoiceId }: { invoiceId: string }) {
     }
     setLoading(true);
     setMessage("");
-    const supabase = createClient();
-    const { error } = await supabase.rpc("record_invoice_payment", {
-      target_invoice_id: invoiceId,
-      payment_amount: Number(amount),
-      payment_date_value: businessDate(),
-      payment_mode_value: mode,
-      payment_reference: reference || null,
-    });
+    const res = await fetch("/api/finance/invoice-payment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_invoice_id: invoiceId, payment_amount: Number(amount), payment_date_value: businessDate(), payment_mode_value: mode, payment_reference: reference || null }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setFailed(true);

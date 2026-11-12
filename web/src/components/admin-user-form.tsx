@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 import type { DesignationRow, UserDirectoryRow } from "../lib/data";
 
 type Props = {
@@ -71,14 +71,11 @@ export function AdminUserForm({ user, dealers, managers, designations }: Props) 
     setPasswordMessage("");
     setPasswordFailed(false);
     setPasswordLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_set_user_password", {
-      p_user_id: user.user_id,
-      p_password: newPassword,
-    });
+    const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_user_id: user.user_id, p_password: newPassword }) });
+    const json = await res.json();
     setPasswordLoading(false);
-    if (error) {
-      setPasswordMessage(error.message);
+    if (!res.ok) {
+      setPasswordMessage(json.error ?? "Failed");
       setPasswordFailed(true);
       return;
     }
@@ -95,20 +92,11 @@ export function AdminUserForm({ user, dealers, managers, designations }: Props) 
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_upsert_user_profile", {
-      p_user_id: user.user_id,
-      p_full_name: fullName.trim(),
-      p_role: role,
-      p_is_active: isActive,
-      p_dealer_id: role === "dealer" ? dealerId || null : null,
-      p_manager_id: wantedManagerRole ? effectiveManagerId || null : null,
-      p_designation_id: designationId || null,
-      p_phone: phone.trim() || null,
-    });
+    const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_user_id: user.user_id, p_full_name: fullName.trim(), p_role: role, p_is_active: isActive, p_dealer_id: role === "dealer" ? dealerId || null : null, p_manager_id: wantedManagerRole ? effectiveManagerId || null : null, p_designation_id: designationId || null, p_phone: phone.trim() || null }) });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -118,6 +106,9 @@ export function AdminUserForm({ user, dealers, managers, designations }: Props) 
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end">
+        <PdfHelp guide="03-admin-users" />
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Full name
@@ -228,7 +219,7 @@ export function AdminUserForm({ user, dealers, managers, designations }: Props) 
       </div>
 
       <label className="flex items-center gap-2 text-sm text-[#334536]">
-        <input checked={isActive} onChange={(event) => setIsActive(event.target.checked)} type="checkbox" />
+        <input checked={isActive} name="isActive" onChange={(event) => setIsActive(event.target.checked)} type="checkbox" />
         Account is active
       </label>
 

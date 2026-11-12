@@ -123,6 +123,7 @@ export default async function AdminPage() {
             id="catalogue"
             summary={`${products.length} products`}
             title="Product catalogue"
+            helpGuide="01-admin-products"
           >
             <RecordPicker
               collapseAfter={15}
@@ -138,6 +139,7 @@ export default async function AdminPage() {
             description="Every field below is one call to admin_upsert_product. Price edits never rewrite an issued document, because order and invoice lines snapshot the price they were raised at."
             id="create-product"
             title="Create a product"
+            helpGuide="01-admin-products"
           >
             <AdminProductForm product={null} />
           </CollapsiblePanel>
@@ -147,6 +149,7 @@ export default async function AdminPage() {
             id="dealers"
             summary={`${dealers.length} dealers`}
             title="Dealer master"
+            helpGuide="02-admin-dealers"
           >
             <RecordPicker
               collapseAfter={15}
@@ -162,6 +165,7 @@ export default async function AdminPage() {
             description="A dealer cannot be created without a region, and can only be mapped to an active sales rep. Both refusals happen here rather than at order time."
             id="create-dealer"
             title="Create a dealer"
+            helpGuide="02-admin-dealers"
           >
             <AdminDealerForm dealer={null} salesReps={salesReps} />
           </CollapsiblePanel>
@@ -171,6 +175,7 @@ export default async function AdminPage() {
             id="prices"
             summary={`${prices.length} prices`}
             title="Price list"
+            helpGuide="04-price-lists"
           >
             <RecordPicker
               collapseAfter={15}
@@ -186,6 +191,7 @@ export default async function AdminPage() {
             description="A price belongs to one dealer or one tier, never both. Removing one is safe: prices are snapshotted onto the order line when it is raised."
             id="create-price"
             title="Create a price"
+            helpGuide="04-price-lists"
           >
             <AdminPriceListForm dealers={dealers} entry={null} products={products} />
           </CollapsiblePanel>

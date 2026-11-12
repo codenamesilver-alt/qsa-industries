@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { ProductRow } from "../lib/data";
 import { businessDate } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 // receive_into_batch takes a stock_movement_source, and the function itself
 // refuses 'sales' because a batch is stock arriving rather than stock leaving.
@@ -44,17 +44,9 @@ export function BatchReceiveForm({ products }: { products: ProductRow[] }) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("receive_into_batch", {
-      p_product_id: productId,
-      p_batch_code: batchCode.trim(),
-      p_manufacture_date: manufactureDate || null,
-      p_expiry_date: expiryDate,
-      p_quantity: Number(quantity),
-      p_source: source,
-      p_reference_id: null,
-      p_reason: reason.trim() || null,
-    });
+    const res = await fetch("/api/batches/receive", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_product_id: productId, p_batch_code: batchCode.trim(), p_manufacture_date: manufactureDate || null, p_expiry_date: expiryDate, p_quantity: Number(quantity), p_source: source, p_reference_id: null, p_reason: reason.trim() || null }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -72,6 +64,7 @@ export function BatchReceiveForm({ products }: { products: ProductRow[] }) {
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="11-batch-receive" /></div>
       <label className="text-sm font-semibold text-[#334536]">
         Product
         <select

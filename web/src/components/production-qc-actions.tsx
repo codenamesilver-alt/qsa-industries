@@ -2,8 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { ProductionRunRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 export function ProductionQcActions({
   runs,
@@ -43,17 +43,13 @@ export function ProductionQcActions({
     setLoading(true);
     setMessage("");
     setFailed(false);
-    const supabase = createClient();
-    // Only the two QC columns are granted to authenticated, and the SELECT is
-    // narrowed to them as well so a failure here is unambiguous: if the grant or
-    // the RLS row filter is wrong, the update matches nothing or is refused
-    // rather than silently editing a different column.
-    const { error } = await supabase
-      .from("production_runs")
-      .update({ qc_status: qcStatus, qc_notes: qcNotes || null })
-      .eq("id", runId)
-      .select("id")
-      .maybeSingle();
+    const res = await fetch("/api/production/qc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: runId, qc_status: qcStatus, qc_notes: qcNotes || null }),
+    });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -79,6 +75,7 @@ export function ProductionQcActions({
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="09-production-qc" /></div>
       <p className="rounded-2xl bg-[#f5f7f2] px-4 py-3 text-sm text-[#5d6b60]">
         {pendingCount} run{pendingCount === 1 ? "" : "s"} awaiting a verdict. A verdict is final: once a run is passed or
         failed the database refuses any further QC change to it.

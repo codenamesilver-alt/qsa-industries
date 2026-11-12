@@ -2,8 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { DesignationRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 // The catalogue behind every job title dropdown in the application: the two
 // account forms, the per-person title picker on the chart, and the permission
@@ -62,12 +62,18 @@ export function DesignationManager({ designations }: Props) {
   function save() {
     if (!trimmedName) return;
     startTransition(async () => {
-      const { error } = await createClient().rpc("admin_upsert_designation", {
-        p_name: trimmedName,
-        p_description: description.trim() || null,
-        p_sort_order: editing ? editing.sort_order : active.length,
-        p_designation_id: editing?.id ?? null,
+      const res = await fetch("/api/designations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_name: trimmedName,
+          p_description: description.trim() || null,
+          p_sort_order: editing ? editing.sort_order : active.length,
+          p_designation_id: editing?.id ?? null,
+        }),
       });
+      const json = await res.json();
+      const error = res.ok ? null : { message: json.error ?? "Failed" };
       if (error) {
         setMessage({ tone: "error", text: error.message });
         return;
@@ -103,10 +109,13 @@ export function DesignationManager({ designations }: Props) {
       // retiring is a direct write of one boolean, from an admin-only screen,
       // and the guard that matters -- nobody may strand a person's title -- is the
       // is_active = false read on org_people rather than a rule enforced here.
-      const { error } = await createClient()
-        .from("designations")
-        .update({ is_active: false })
-        .eq("id", row.id);
+      const r = await fetch("/api/designations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, is_active: false }),
+      });
+      const j = await r.json();
+      const error = r.ok ? null : { message: j.error ?? "Failed" };
       if (error) {
         setMessage({ tone: "error", text: error.message });
         return;
@@ -122,12 +131,18 @@ export function DesignationManager({ designations }: Props) {
       // admin_upsert_designation is the only write to this table that the
       // database has an opinion about: it re-checks the name is not a duplicate of
       // something else and it is the same path a rename takes.
-      const { error } = await createClient().rpc("admin_upsert_designation", {
-        p_name: row.name,
-        p_description: row.description,
-        p_sort_order: row.sort_order,
-        p_designation_id: row.id,
+      const r = await fetch("/api/designations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p_name: row.name,
+          p_description: row.description,
+          p_sort_order: row.sort_order,
+          p_designation_id: row.id,
+        }),
       });
+      const j = await r.json();
+      const error = r.ok ? null : { message: j.error ?? "Failed" };
       if (error) {
         setMessage({ tone: "error", text: error.message });
         return;

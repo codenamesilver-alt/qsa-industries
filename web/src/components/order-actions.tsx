@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { businessDate } from "../lib/format";
-import { createClient } from "../lib/supabase/client";
 import type { UserRole } from "../lib/auth";
 
 export function OrderActions({
@@ -23,43 +22,22 @@ export function OrderActions({
   async function run(action: string) {
     setMessage("");
     setLoading(action);
-    const supabase = createClient();
     let error: { message: string } | null = null;
     const today = businessDate();
 
-    if (action === "approve" || action === "override") {
-      const result = await supabase.rpc("approve_order", {
-        target_order_id: orderId,
-        approval_remark: remark || null,
-        use_override: action === "override",
-      });
-      error = result.error;
-    } else if (action === "escalate") {
-      const result = await supabase.rpc("escalate_order", {
-        target_order_id: orderId,
-        escalation_remark: remark || null,
-      });
-      error = result.error;
-    } else if (action === "director_approve") {
-      const result = await supabase.rpc("director_approve_order", {
-        target_order_id: orderId,
-        approval_remark: remark || null,
-      });
-      error = result.error;
-    } else if (action === "director_reject") {
-      const result = await supabase.rpc("director_reject_order", {
-        target_order_id: orderId,
-        rejection_remark: remark,
-      });
-      error = result.error;
-    } else if (action === "dispatch") {
-      const result = await supabase.rpc("dispatch_order", {
-        target_order_id: orderId,
+    const res = await fetch(`/api/orders/${orderId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
         dispatch_date_value: today,
         dispatch_note: remark || null,
-      });
-      error = result.error;
-    }
+        approval_remark: remark || null,
+        rejection_remark: remark,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) error = { message: json.error ?? "Failed" };
 
     setLoading("");
     if (error) {

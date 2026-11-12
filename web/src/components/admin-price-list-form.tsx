@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 import type { AdminDealerRow, AdminProductRow, PriceListRow } from "../lib/data";
 
 type Props = {
@@ -44,19 +44,11 @@ export function AdminPriceListForm({ entry, products, dealers }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_upsert_price_list", {
-      p_product_id: productId,
-      p_price: priceValue,
-      p_price_list_id: entry?.id ?? null,
-      p_dealer_id: scope === "dealer" ? dealerId : null,
-      p_price_tier: scope === "tier" ? tier.trim() : null,
-      p_valid_from: validFrom || null,
-      p_valid_to: validTo || null,
-    });
+    const res = await fetch("/api/price-lists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_product_id: productId, p_price: priceValue, p_price_list_id: entry?.id ?? null, p_dealer_id: scope === "dealer" ? dealerId : null, p_price_tier: scope === "tier" ? tier.trim() : null, p_valid_from: validFrom || null, p_valid_to: validTo || null }) });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -77,11 +69,11 @@ export function AdminPriceListForm({ entry, products, dealers }: Props) {
     setMessage("");
     setFailed(false);
     setRemoving(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_delete_price_list", { p_price_list_id: entry.id });
+    const res = await fetch("/api/price-lists", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_price_list_id: entry.id }) });
+    const json = await res.json();
     setRemoving(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -91,6 +83,9 @@ export function AdminPriceListForm({ entry, products, dealers }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={save}>
+      <div className="flex justify-end">
+        <PdfHelp guide="04-price-lists" />
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Product

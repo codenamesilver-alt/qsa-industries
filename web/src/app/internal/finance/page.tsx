@@ -12,6 +12,7 @@ import {
 } from "../../../components/finance-lists";
 import { ExpenseForm, ExpenseHeadManager } from "../../../components/expense-actions";
 import { FinanceSettingsForm } from "../../../components/finance-settings-form";
+import { ManualInvoiceForm } from "../../../components/manual-invoice-form";
 import { CollapsiblePanel, PanelStack } from "../../../components/panel-stack";
 import { PortalShell } from "../../../components/portal-shell";
 import { RecordPicker, type PickerItem } from "../../../components/record-picker";
@@ -104,7 +105,19 @@ export default async function FinancePage() {
         formatNumber(invoice.total_amount),
         formatNumber(invoiceOutstanding),
       ],
-      body: <PaymentForm invoiceId={invoice.id} />,
+      body: (
+          <>
+            <div className="mb-4">
+              <Link
+                className="inline-flex items-center rounded-full border border-[#d6e1ce] bg-white px-4 py-2 text-xs font-bold text-[#4f6254] transition hover:border-[#9db56a] hover:text-[#15221b]"
+                href={`/internal/finance/invoices/${invoice.id}`}
+              >
+                View document
+              </Link>
+            </div>
+            <PaymentForm invoiceId={invoice.id} />
+          </>
+        ),
     };
   });
 
@@ -170,6 +183,15 @@ export default async function FinancePage() {
 
       <div className="mt-6 space-y-6">
         <PanelStack defaultOpenId="register">
+          <CollapsiblePanel
+            description="Create an invoice manually for an existing dealer, with taxable amount, GST and total. Not tied to an order."
+            id="manual-invoice"
+            title="Manual invoice"
+            helpGuide="29-manual-invoices"
+          >
+            <ManualInvoiceForm dealers={dealers} />
+          </CollapsiblePanel>
+
           <CollapsiblePanel
             description="Record a payment against an invoice. Partial payments remain supported. Search by invoice number or dealer, then open the invoice you mean."
             id="register"

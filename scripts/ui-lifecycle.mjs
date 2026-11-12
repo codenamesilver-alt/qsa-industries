@@ -130,7 +130,7 @@ const db = connect();
 await db.connect();
 const one = async (sql, params) => (await db.query(sql, params)).rows[0];
 
-const IGNORE = [/favicon/i, /Download the React DevTools/i, /supabase.*rate limit/i];
+const IGNORE = [/favicon/i, /Download the React DevTools/i, /database.*rate limit/i];
 const problemsFromBrowser = [];
 
 function watch(page, where) {

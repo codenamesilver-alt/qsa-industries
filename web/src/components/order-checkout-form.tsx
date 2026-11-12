@@ -2,9 +2,9 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { DealerCatalogRow } from "../lib/data";
 import { formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 export function OrderCheckoutForm({ catalog }: { catalog: DealerCatalogRow[] }) {
   const router = useRouter();
@@ -34,8 +34,9 @@ export function OrderCheckoutForm({ catalog }: { catalog: DealerCatalogRow[] }) 
         product_id: product.product_id,
         quantity: Number(quantities[product.product_id]),
       }));
-    const supabase = createClient();
-    const { error } = await supabase.rpc("create_dealer_order", { order_lines: lines });
+    const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_lines: lines }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -48,6 +49,7 @@ export function OrderCheckoutForm({ catalog }: { catalog: DealerCatalogRow[] }) 
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="05-orders-checkout" /></div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-[#e8ede6] text-xs uppercase tracking-[0.16em] text-[#819083]">

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 import type { AdminProductRow } from "../lib/data";
 
 type Props = {
@@ -52,22 +52,26 @@ export function AdminProductForm({ product }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_upsert_product", {
-      p_sku: sku.trim(),
-      p_name: name.trim(),
-      p_category: category.trim(),
-      p_unit_of_measure: unit.trim(),
-      p_price: priceValue,
-      p_hsn_code: hsn.trim(),
-      p_product_id: product?.id ?? null,
-      p_low_stock_threshold: thresholdValue,
-      p_is_sellable: sellable,
-      p_active: active,
+    const res = await fetch("/api/admin/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_sku: sku.trim(),
+        p_name: name.trim(),
+        p_category: category.trim(),
+        p_unit_of_measure: unit.trim(),
+        p_price: priceValue,
+        p_hsn_code: hsn.trim(),
+        p_product_id: product?.id ?? null,
+        p_low_stock_threshold: thresholdValue,
+        p_is_sellable: sellable,
+        p_active: active,
+      }),
     });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -86,6 +90,9 @@ export function AdminProductForm({ product }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end">
+        <PdfHelp guide="01-admin-products" />
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           SKU
@@ -159,11 +166,11 @@ export function AdminProductForm({ product }: Props) {
 
       <div className="flex flex-wrap gap-5">
         <label className="flex items-center gap-2 text-sm text-[#334536]">
-          <input checked={sellable} onChange={(event) => setSellable(event.target.checked)} type="checkbox" />
+          <input checked={sellable} name="sellable" onChange={(event) => setSellable(event.target.checked)} type="checkbox" />
           Sellable to dealers
         </label>
         <label className="flex items-center gap-2 text-sm text-[#334536]">
-          <input checked={active} onChange={(event) => setActive(event.target.checked)} type="checkbox" />
+          <input checked={active} name="active" onChange={(event) => setActive(event.target.checked)} type="checkbox" />
           Active
         </label>
       </div>

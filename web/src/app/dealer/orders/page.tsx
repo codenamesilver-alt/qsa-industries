@@ -1,5 +1,6 @@
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
 import { OrderEditForm } from "../../../components/order-edit-form";
+import Link from "next/link";
 import { PortalShell } from "../../../components/portal-shell";
 import { RecordPicker, type PickerItem } from "../../../components/record-picker";
 import { requireProfile } from "../../../lib/auth";
@@ -71,6 +72,14 @@ export default async function DealerOrdersPage() {
           {/* Editable while pending only, and the window closes the moment sales
               approve: the price shown is re-read and the total can move, and an
               approval is a credit decision on a specific total. */}
+          <div className="mt-4">
+            <Link
+              className="inline-flex items-center rounded-full border border-[#d6e1ce] bg-white px-4 py-2 text-xs font-bold text-[#4f6254] transition hover:border-[#9db56a] hover:text-[#15221b]"
+              href={`/sales/orders/${order.id}`}
+            >
+              View document
+            </Link>
+          </div>
           {order.status === "pending" ? <OrderEditForm catalog={catalog} order={order} /> : null}
         </>
       ),

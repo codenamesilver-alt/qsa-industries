@@ -1,0 +1,1 @@
+select r.name as role, string_agg(rp.permission_code, ', ' o => ERR relation "public.roles" does not exist

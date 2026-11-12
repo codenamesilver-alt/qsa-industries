@@ -2,8 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { SalesRepDealerRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   dealers: SalesRepDealerRow[];
@@ -40,11 +40,9 @@ export function DealerAssignmentForm({ dealers, reps }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("sales_assign_dealer_to_rep", {
-      p_dealer_id: dealerId,
-      p_sales_rep_id: repId,
-    });
+    const res = await fetch("/api/dealer-assignment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_dealer_id: dealerId, p_sales_rep_id: repId }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -69,6 +67,7 @@ export function DealerAssignmentForm({ dealers, reps }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="16-dealer-assignment" /></div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Dealer

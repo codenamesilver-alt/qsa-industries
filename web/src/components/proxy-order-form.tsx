@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { DealerCatalogRow, DealerRow } from "../lib/data";
 import { businessDate, formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 // create_dealer_order is the same function the dealer portal uses, with
 // p_dealer_id supplied. For a sales rep it refuses any dealer that is not mapped
@@ -53,10 +53,13 @@ export function ProxyOrderForm({ dealers }: { dealers: DealerRow[] }) {
       return;
     }
     let live = true;
-    // The Supabase query builder is thenable but not a full Promise, so it is
+    // The query builder is thenable but not a full Promise, so it is
     // awaited inside an async function rather than chained with .then/.finally.
     const load = async () => {
-      const { data, error } = await createClient().rpc("dealer_catalog_for", { target_dealer_id: dealerId });
+      const res = await fetch(`/api/dealer-catalog/${dealerId}`);
+      const json = await res.json();
+      const data = json.data;
+      const error = res.ok ? null : { message: json.error ?? "Failed" };
       if (!live) return;
       if (error) {
         setMessage(error.message);
@@ -107,12 +110,17 @@ export function ProxyOrderForm({ dealers }: { dealers: DealerRow[] }) {
     const lines = catalog
       .filter((product) => Number(quantities[product.product_id] ?? 0) > 0)
       .map((product) => ({ product_id: product.product_id, quantity: Number(quantities[product.product_id]) }));
-    const supabase = createClient();
-    const { error } = await supabase.rpc("create_dealer_order", {
-      order_lines: lines,
-      p_requested_delivery_date: deliveryDate || null,
-      p_dealer_id: dealerId || null,
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_lines: lines,
+        p_requested_delivery_date: deliveryDate || null,
+        p_dealer_id: dealerId || null,
+      }),
     });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -137,6 +145,7 @@ export function ProxyOrderForm({ dealers }: { dealers: DealerRow[] }) {
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="07-proxy-orders" /></div>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Dealer

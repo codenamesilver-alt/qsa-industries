@@ -3,7 +3,7 @@ import { formatNumber } from "../lib/format";
 // Charts are hand-rolled SVG rather than a charting dependency. Two reasons, both
 // about this codebase specifically:
 //
-//   1. Every number here comes from a Supabase view that is already aggregated, so
+//   1. Every number here comes from an aggregated database view, so
 //      there is no dataset to fit or scale interactively. A chart library would be
 //      bringing a scale and a tooltip system to draw four fixed series.
 //   2. The rest of the UI is Tailwind classes over inline hex tokens (#dfe6dc,

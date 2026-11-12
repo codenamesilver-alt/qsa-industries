@@ -2,9 +2,9 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
 import type { DealerCatalogRow, OrderRow } from "../lib/data";
 import { businessDate, formatNumber } from "../lib/format";
+import { PdfHelp } from "./pdf-help";
 
 // edit_dealer_order replaces the lines of a pending order. Two things are
 // deliberately not editable here and the form says so rather than offering a
@@ -71,12 +71,9 @@ export function OrderEditForm({ order, catalog }: { order: OrderRow; catalog: De
     const lines = catalog
       .filter((product) => Number(quantities[product.product_id] ?? 0) > 0)
       .map((product) => ({ product_id: product.product_id, quantity: Number(quantities[product.product_id]) }));
-    const supabase = createClient();
-    const { error } = await supabase.rpc("edit_dealer_order", {
-      target_order_id: order.id,
-      order_lines: lines,
-      p_requested_delivery_date: deliveryDate || null,
-    });
+    const res = await fetch(`/api/orders/${order.id}/edit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_lines: lines, p_requested_delivery_date: deliveryDate || null }) });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -105,6 +102,7 @@ export function OrderEditForm({ order, catalog }: { order: OrderRow; catalog: De
 
   return (
     <form className="mt-5 space-y-5 border-t border-[#e8ede6] pt-5" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="06-orders-edit" /></div>
       <p className="text-sm text-[#5d6b60]">
         Editing replaces the whole order, not one line. Prices are re-read from the catalogue and the dealer&apos;s price
         list, and stock is re-checked. Once the order is no longer pending this is closed for good, because an approval

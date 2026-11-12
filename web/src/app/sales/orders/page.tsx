@@ -1,11 +1,13 @@
 import { DataPanel, EmptyState, MetricCard } from "../../../components/data-panel";
 import { OrderActions } from "../../../components/order-actions";
 import { OrderEditForm } from "../../../components/order-edit-form";
+import Link from "next/link";
 import { PortalShell } from "../../../components/portal-shell";
 import { ProxyOrderForm } from "../../../components/proxy-order-form";
+import { ManualOrderForm } from "../../../components/manual-order-form";
 import { RecordPicker, type PickerItem } from "../../../components/record-picker";
 import { requireProfile } from "../../../lib/auth";
-import { getActiveDealers, getDealerCatalogFor, getDealerExposure, getMappedDealers, getOrders } from "../../../lib/data";
+import { getActiveDealers, getDealerCatalogFor, getDealerExposure, getMappedDealers, getOrders, getProducts } from "../../../lib/data";
 import { formatDate, formatNumber, statusLabel, statusTone } from "../../../lib/format";
 
 const salesRoles = ["admin", "sales_rep", "sales_manager", "sales_director"] as const;
@@ -25,7 +27,7 @@ export default async function SalesOrdersPage() {
   const profile = await requireProfile(salesRoles);
   const canProxy = (proxyRoles as readonly string[]).includes(profile.role);
   const canEdit = (editRoles as readonly string[]).includes(profile.role);
-  const [orders, exposure, proxyDealers] = await Promise.all([
+  const [orders, exposure, proxyDealers, products] = await Promise.all([
     getOrders(),
     getDealerExposure(),
     // A rep may only name a dealer mapped to them; an admin may name any active
@@ -36,6 +38,7 @@ export default async function SalesOrdersPage() {
       : profile.role === "admin"
         ? getActiveDealers()
         : getMappedDealers(),
+    getProducts(),
   ]);
   const exposureByDealer = new Map(exposure.map((row) => [row.dealer_id, row]));
   const pending = orders.filter((order) => order.status === "pending");
@@ -128,6 +131,14 @@ export default async function SalesOrdersPage() {
           ) : (
             <EmptyState message="Order lines are not visible in current role scope." />
           )}
+          <div className="mt-4">
+            <Link
+              className="inline-flex items-center rounded-full border border-[#d6e1ce] bg-white px-4 py-2 text-xs font-bold text-[#4f6254] transition hover:border-[#9db56a] hover:text-[#15221b]"
+              href={`/sales/orders/${order.id}`}
+            >
+              View document
+            </Link>
+          </div>
           <OrderActions orderId={order.id} role={profile.role} status={order.status} />
           {canEdit && order.status === "pending" ? (
             <OrderEditForm catalog={catalogs.get(order.dealer_id) ?? []} order={order} />
@@ -170,6 +181,16 @@ export default async function SalesOrdersPage() {
             title="Proxy order"
           >
             <ProxyOrderForm dealers={proxyDealers} />
+          </DataPanel>
+        </div>
+      ) : null}
+      {canProxy ? (
+        <div className="mt-6">
+          <DataPanel
+            description="Create a sales order manually for any dealer, with custom product lines and prices."
+            title="Manual sales order"
+          >
+            <ManualOrderForm dealers={proxyDealers} products={products} />
           </DataPanel>
         </div>
       ) : null}

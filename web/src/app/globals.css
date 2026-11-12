@@ -1,13 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #f5f7f2;
-  --foreground: #15221b;
+  --background: #f2f3ed;
+  --surface: #f2f3ed;
+  --ink: #27312d;
+  --muted: #84908a;
+  --line: #e3e6df;
+  --green: #baff48;
+  --green-deep: #385d19;
+  --blue: #91c8db;
+  --gold: #c7a66c;
+  --silver: #d9ddd7;
+  --raised: 7px 7px 18px #d9dcd5, -7px -7px 18px #fff;
+  --raised-sm: 4px 4px 10px #d9dcd5, -4px -4px 10px #fff;
+  --inset: inset 4px 4px 9px #d9dcd5, inset -4px -4px 9px #fff;
+  --radius: 20px;
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-green: var(--green);
+  --color-green-deep: var(--green-deep);
+  --color-blue: var(--blue);
+  --color-gold: var(--gold);
+  --color-silver: var(--silver);
 }
 
 * {
@@ -16,86 +39,44 @@
 
 html {
   background: var(--background);
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
 }
 
-/* No sideways scrolling on the page itself. Tables used to carry a fixed
-   min-width so wide ledgers stayed legible and scrolled inside their own
-   container; they now fit their container instead, and long unbroken values
-   (emails, batch codes, free-text reasons) wrap rather than pushing the layout.
-   overflow-x: clip is used rather than hidden because hidden would make this
-   element a scroll container and break the sticky sidebar. */
-html {
-  overflow-x: clip;
+h1, h2, h3, h4, .brand strong {
+  font-family: 'Manrope', sans-serif;
 }
+
+/* neumorphic helpers */
+.neu-raised { box-shadow: var(--raised); border-radius: var(--radius); background: var(--surface); }
+.neu-raised-sm { box-shadow: var(--raised-sm); border-radius: 14px; background: var(--surface); }
+.neu-inset { box-shadow: var(--inset); border-radius: 14px; background: var(--surface); }
+
+/* links */
+a { color: inherit; text-decoration: none; }
+
+:focus-visible { outline: 3px solid #78a830; outline-offset: 3px; }
+
+svg { display: block; }
 
 .overflow-x-auto th,
 .overflow-x-auto td {
   overflow-wrap: anywhere;
 }
 
-/* Printing. The PDF export is the browser's print dialog, so these rules are the
-   whole of the PDF layout. Three jobs, in order of how much they matter:
-   keep the figures, drop the furniture, and stop the page breaking a table row in
-   half. */
 @media print {
-  /* White paper, black ink. The screen palette is built for a backlit display;
-     printed as-is it wastes toner and the muted greys wash out. */
-  html,
-  body {
-    background: #fff;
-    color: #000;
-  }
-
-  /* Everything interactive is dropped, so nothing that chose the view is printed
-     alongside the view: the portal nav, the sign out button, and any date inputs.
-     The header keeps its title, because a printed page with no title cannot be
-     filed. No !important here, so a component that genuinely needs to appear on
-     paper can say so with the print: utility of its choice. */
-  button,
-  input,
-  select,
-  textarea,
-  nav {
-    display: none;
-  }
-
-  /* Links are navigation almost everywhere in this portal, so they print as their
-     own text with no underline and no colour. The report tables contain no links
-     at all, so nothing meaningful is lost. */
-  a {
-    color: #000;
-    text-decoration: none;
-  }
-
-  /* Keep each table row whole. Without this a row's dealer name lands at the foot
-     of one page and its figures at the head of the next. */
-  tr,
-  thead {
-    break-inside: avoid;
-  }
-
-  /* Repeating the header on every page of a long dealer book, which is the entire
-     point of a table that continues overleaf. */
-  thead {
-    display: table-header-group;
-  }
-
-  tfoot {
-    display: table-row-group;
-  }
-
-  /* The dealer book scrolls horizontally on screen. Printed, it gets the full
-     sheet width instead, since a print stylesheet cannot add a page and a table
-     clipped at the right margin is worse than a small font. */
-  .overflow-x-auto {
-    overflow: visible;
-  }
+  html, body { background: #fff; color: #000; }
+  button, input, select, textarea, nav { display: none; }
+  a { color: #000; text-decoration: none; }
+  tr, thead { break-inside: avoid; }
+  thead { display: table-header-group; }
+  tfoot { display: table-row-group; }
+  .overflow-x-auto { overflow: visible; }
 }
-

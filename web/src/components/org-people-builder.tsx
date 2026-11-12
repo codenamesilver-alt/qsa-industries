@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+
 import type { DesignationRow, OrgPersonRow } from "../lib/data";
 import { descendantPeopleIds, flattenPeopleTree } from "../lib/org-people-tree";
 import { roleLabel } from "../lib/org-tree";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   rows: OrgPersonRow[];
@@ -80,7 +81,9 @@ export function OrgPeopleBuilder({ rows, designations }: Props) {
     await call(
       "clear",
       async () => {
-        const { error } = await createClient().rpc("admin_clear_org_chart");
+        const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clear_chart" }) });
+      const json = await res.json();
+      const error = res.ok ? null : { message: json.error ?? "Failed" };
         if (error) return error.message;
         return null;
       },
@@ -165,8 +168,6 @@ function PersonRow({
   const [reportsToId, setReportsToId] = useState(person.reports_to_id ?? "");
   const [rowMessage, setRowMessage] = useState("");
 
-  const supabase = createClient();
-
   // A person cannot report to themselves or to anybody who already reports to them,
   // or the chart would stop being a tree. The picker is derived from the same rows
   // the chart is drawn from, so the two cannot disagree about what is below what,
@@ -191,8 +192,6 @@ function PersonRow({
   async function save() {
     setRowMessage("");
     if (!designationChanged && !reportsToChanged) return;
-    const supabaseClient = supabase;
-
     // Two calls, and the order matters. The designation goes first because it is
     // independent of the shape of the tree, so if the reporting line is refused the
     // title is already correct rather than the save being lost whole.
@@ -200,20 +199,15 @@ function PersonRow({
       `save:${person.user_id}`,
       async () => {
         if (designationChanged) {
-          const { error } = await supabaseClient.rpc("admin_upsert_user_profile", {
-            p_user_id: person.user_id,
-            p_full_name: person.full_name,
-            p_role: person.role,
-            p_is_active: person.is_active,
-            p_designation_id: effectiveDesignationId || null,
-          });
+          const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ p_user_id: person.user_id, p_full_name: person.full_name, p_role: person.role, p_is_active: person.is_active, p_designation_id: effectiveDesignationId || null }) });
+          const json = await res.json();
+          const error = res.ok ? null : { message: json.error ?? "Failed" };
           if (error) return error.message;
         }
         if (reportsToChanged) {
-          const { error } = await supabaseClient.rpc("admin_set_reports_to", {
-            p_user_id: person.user_id,
-            p_reports_to_id: effectiveReportsToId || null,
-          });
+          const res = await fetch("/api/org", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_reports_to", p_user_id: person.user_id, p_reports_to_id: effectiveReportsToId || null }) });
+          const json = await res.json();
+          const error = res.ok ? null : { message: json.error ?? "Failed" };
           if (error) return error.message;
         }
         return null;

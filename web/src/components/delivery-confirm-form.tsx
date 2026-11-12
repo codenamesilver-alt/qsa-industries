@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 
 type Props = {
   orderId: string;
@@ -25,14 +25,15 @@ export function DeliveryConfirmForm({ orderId, orderReference }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("mark_order_delivered", {
-      target_order_id: orderId,
-      p_note: note.trim() || null,
+    const res = await fetch(`/api/orders/${orderId}/deliver`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_note: note.trim() || null }),
     });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }

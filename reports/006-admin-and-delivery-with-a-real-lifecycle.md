@@ -201,7 +201,7 @@ short note, and shows the days on the road.
 
 ## What the access-control suite checks
 
-`supabase/tests/stage12_admin_delivery_test.sql`, 133 assertions, all on
+`database/tests/stage12_admin_delivery_test.sql`, 133 assertions, all on
 `authenticated` and never on the owner role.
 
 Every write function is called as a signed-in user and asserted to be refused for
@@ -343,3 +343,4 @@ Carried forward from reports 004 and 005, now the only things left:
   real traffic
 - decide whether delivery needs partial receipt, a carrier, or a proof of
   delivery before this goes anywhere near a real customer
+

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "QSA ERP | Operations control system",
+  title: "QSA ERP | Business overview",
   description: "QSA Industries poultry feed manufacturing ERP.",
 };
 

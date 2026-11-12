@@ -6,6 +6,7 @@
 // RecordPicker in the page, because those rows hide a form. This split is what took
 // the purchasing screen from about 22 mounted forms and nine screens of scrolling
 // down to one open form and a register you can search.
+import Link from "next/link";
 import type { PurchaseOrderRow } from "../lib/data";
 import { formatDate, formatNumber, poTone, statusLabel } from "../lib/format";
 import { RecordFilter } from "./record-picker";
@@ -46,7 +47,9 @@ export function PurchaseOrderRegister({ rows }: { rows: PurchaseOrderRow[] }) {
               {visible.map((order) => (
                 <tr key={order.id}>
                   <td className="py-4 pr-4">
-                    <p className="font-semibold">{order.po_number}</p>
+                    <Link className="font-semibold text-[#4f6254] hover:text-[#15221b] hover:underline" href={`/internal/purchasing/${order.id}`}>
+                       {order.po_number}
+                     </Link>
                     <p className="mt-1 text-xs text-[#819083]">{formatDate(order.order_date)}</p>
                   </td>
                   <td className="py-4 pr-4 text-[#5d6b60]">

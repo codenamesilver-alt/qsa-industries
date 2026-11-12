@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../lib/supabase/client";
+import { PdfHelp } from "./pdf-help";
 import type { AdminDealerRow } from "../lib/data";
 
 type Props = {
@@ -54,31 +54,32 @@ export function AdminDealerForm({ dealer, salesReps }: Props) {
     setMessage("");
     setFailed(false);
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("admin_upsert_dealer", {
-      p_name: name.trim(),
-      p_credit_limit: creditValue,
-      p_dealer_id: dealer?.id ?? null,
-      p_contact_person: contact.trim() || null,
-      p_phone: phone.trim() || null,
-      p_email: email.trim() || null,
-      p_address_line1: line1.trim() || null,
-      p_address_line2: line2.trim() || null,
-      p_city: city.trim() || null,
-      p_state: state.trim() || null,
-      p_postal_code: postal.trim() || null,
-      p_credit_limit_override: overrideValue,
-      // The clear flag is sent rather than inferred from an empty box, so
-      // removing an override is an explicit instruction and not an accident of
-      // leaving the field untouched.
-      p_clear_credit_override: overrideValue === null,
-      p_status: status,
-      p_region: region.trim(),
-      p_sales_rep_id: salesRepId || null,
+    const res = await fetch("/api/admin/dealers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_name: name.trim(),
+        p_credit_limit: creditValue,
+        p_dealer_id: dealer?.id ?? null,
+        p_contact_person: contact.trim() || null,
+        p_phone: phone.trim() || null,
+        p_email: email.trim() || null,
+        p_address_line1: line1.trim() || null,
+        p_address_line2: line2.trim() || null,
+        p_city: city.trim() || null,
+        p_state: state.trim() || null,
+        p_postal_code: postal.trim() || null,
+        p_credit_limit_override: overrideValue,
+        p_clear_credit_override: overrideValue === null,
+        p_status: status,
+        p_region: region.trim(),
+        p_sales_rep_id: salesRepId || null,
+      }),
     });
+    const json = await res.json();
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!res.ok) {
+      setMessage(json.error ?? "Failed");
       setFailed(true);
       return;
     }
@@ -103,6 +104,9 @@ export function AdminDealerForm({ dealer, salesReps }: Props) {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="flex justify-end">
+        <PdfHelp guide="02-admin-dealers" />
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-[#334536]">
           Dealer name

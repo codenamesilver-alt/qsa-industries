@@ -4,17 +4,17 @@ Order-to-cash ERP for a poultry feed manufacturer: dealer orders, credit limits,
 production and QC, inventory, dispatch, invoicing, payments, and Tally export.
 
 The application is a Next.js app in [`web/`](web). The database is PostgreSQL on
-Supabase, with all schema and seed data expressed as migrations in
-[`supabase/migrations/`](supabase/migrations).
+database, with all schema and seed data expressed as migrations in
+[`database/migrations/`](database/migrations).
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `web/` | Next.js application (App Router) |
-| `supabase/migrations/` | Schema, functions, RLS, and dev seed data, in order |
-| `supabase/tests/` | pgTAP suites, one file per stage |
-| `supabase/functions/` | Edge functions, the only code that holds the service role key |
+| `database/migrations/` | Schema, functions, RLS, and dev seed data, in order |
+| `database/tests/` | pgTAP suites, one file per stage |
+| `database/functions/` | Edge functions, the only code that holds the service role key |
 | `scripts/` | Database migration, test, audit, backup and cleanup tooling, plus the browser tests |
 | `deployment/` | PM2 process definition, Nginx config, and the deploy script |
 | `docs/` | Build plan, Tally export mapping, and design notes |
@@ -66,14 +66,14 @@ npm run db:verify-fresh -- --keep     # leave the scratch database for inspectio
 npm run db:verify-fresh -- --db name  # use a specific scratch database name
 ```
 
-`--db` needs `CREATEDB` rights, which the Supabase `postgres` role has. The script
+`--db` needs `CREATEDB` rights, which the database `postgres` role has. The script
 never touches the target database in `.env`; it only creates and drops its own
 scratch database.
 
 ### Migration history
 
-History lives in `supabase_migrations.schema_migrations`, created with the same
-three columns the Supabase CLI creates for itself (`version`, `statements`,
+History lives in `database_migrations.schema_migrations`, created with the same
+three columns the database CLI creates for itself (`version`, `statements`,
 `name`). `name` is the CLI's convention: the filename with the leading 14-digit
 version and the `.sql` extension removed, so
 `20260925081840_day1_schema_foundation.sql` is stored as `day1_schema_foundation`.
@@ -85,7 +85,7 @@ SQL behind them. Older rows written by earlier revisions of this runner recorded
 rewrites them from the files in this repository, so it is idempotent and safe to
 re-run. It touches the history table only.
 
-**Do not use `supabase db reset` on this project.** The CLI splits a migration
+**Do not use `database db reset` on this project.** The CLI splits a migration
 into individual statements and replays the stored `statements`; this runner
 sends each file as one multi-statement query and records the file as a single
 element. A reset would find 21 recorded versions and replay almost no SQL. Use
@@ -106,7 +106,7 @@ npm run db:migration-redo -- 20260925092500
 It refuses if the version is not recorded (use `db:migrate` for that) and refuses
 if any later migration is recorded on top of it, since those were applied against
 a schema that is about to change; `--force` overrides that second guard. This is
-the controlled equivalent of `supabase migration repair` plus a re-apply, which is
+the controlled equivalent of `database migration repair` plus a re-apply, which is
 unavailable here for the reason above.
 
 Never use it on a migration that has been deployed anywhere real. Correcting
@@ -154,7 +154,7 @@ than guess at it. Two details it exists to make legible:
 
 ### Writing tests
 
-`supabase/tests/*.sql` are pgTAP suites. Each one is a self-contained transaction
+`database/tests/*.sql` are pgTAP suites. Each one is a self-contained transaction
 that ends in `select * from finish(); rollback;`, so nothing leaks between suites
 even though they all run against the same live database.
 
@@ -216,8 +216,8 @@ npm run lint
 npm run typecheck
 ```
 
-The app needs two public values, `NEXT_PUBLIC_SUPABASE_URL` and
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; any placeholder pair is enough to build.
+The app needs two public values, `NEXT_PUBLIC_database_URL` and
+`NEXT_PUBLIC_database_PUBLISHABLE_KEY`; any placeholder pair is enough to build.
 `web/scripts/provision-user.mjs` (`npm run provision:user -- email full_name role
 [dealer_id]`) creates an account and its profile, and needs a service-role key
 plus `PROVISION_USER_PASSWORD` in the environment. It rejects an unknown role, a
@@ -392,7 +392,7 @@ and does allow null.
 
 ### The login edge function
 
-`supabase/functions/provision-dealer-login` is the only code in the repository
+`database/functions/provision-dealer-login` is the only code in the repository
 that holds the service role key. It is needed because creating an `auth.users` row
 goes through the Auth admin API, and that key must never reach a browser.
 
@@ -407,8 +407,8 @@ Deploy it with exactly one secret, set as an edge function secret and never
 committed:
 
 ```bash
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<key>   # or set it in the dashboard
-supabase functions deploy provision-dealer-login
+database secrets set database_SERVICE_ROLE_KEY=<key>   # or set it in the dashboard
+database functions deploy provision-dealer-login
 ```
 
 Until it is deployed, `admin_activate_dealer` cannot be satisfied from the browser,
@@ -426,12 +426,12 @@ because its login precondition is only reachable through it.
   queries does not exist yet. The history shape, recorded SQL and naming
   convention are asserted by `db:verify-fresh` during `npm test` instead, against
   a database actually built by replaying the migrations.
-- **lint, typecheck and build** — the `web` app with placeholder public Supabase
+- **lint, typecheck and build** — the `web` app with placeholder public database
   env values. No real credentials are needed or wanted; the two variables are
   inlined into the client bundle.
 
 The browser suites are deliberately not in CI. `ui:smoke` and `ui:lifecycle`
-drive a running Next.js server against a real Supabase project, so they need live
+drive a running Next.js server against a real database project, so they need live
 credentials and mutate data. Run them locally.
 
 ## Backups and restores
@@ -444,7 +444,7 @@ npm run db:restore-check         # rebuild the newest backup and prove it works
 `db:backup` writes a logical dump of every public table to `backups/`, named
 `qsa-<UTC timestamp>.sql`, and prunes on every run: the newest 20 are kept, and
 anything older than 14 days is dropped. The dump is **data only** — the schema
-comes from `supabase/migrations`, so a restore replays the migrations and loads
+comes from `database/migrations`, so a restore replays the migrations and loads
 the dump on top. That keeps the file small and diffable, and it means a dump is
 only compatible with the migration set that produced it, so keep backups and
 commits together.
@@ -487,7 +487,7 @@ replace an existing database without `--force`, and it does not report success
 if any check failed. This is the incident-recovery path — see
 [`deployment/README.md`](deployment/README.md#rollback).
 
-Both scripts need permission to create databases, which the Supabase `postgres`
+Both scripts need permission to create databases, which the database `postgres`
 role has. `pg_dump` is not required, but on a server that has it, also take a
 self-contained dump so a restore does not depend on the migration files.
 
@@ -691,4 +691,5 @@ with per-user credentials, before this goes anywhere near production.
 live, because the homepage is public and RLS denies anonymous reads, so they have
 to be updated by hand when the seed data changes. `db:verify-fresh` is what proves
 those numbers.
+
 

@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { businessDate } from "../lib/format";
-import { createClient } from "../lib/supabase/client";
 import type { ProductRow } from "../lib/data";
+import { PdfHelp } from "./pdf-help";
 
 type MaterialOption = {
   id: string;
@@ -75,16 +75,21 @@ export function ProductionRunForm({
       return;
     }
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("create_production_run", {
-      target_product_id: productId,
-       output_quantity: outputValue,
-      run_shift: shift,
-      run_date_value: runDate,
-      material_rows: materialRows,
-      qc_status_value: qcStatus,
-      qc_notes_value: qcNotes,
+    const res = await fetch("/api/production/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_product_id: productId,
+        output_quantity: outputValue,
+        run_shift: shift,
+        run_date_value: runDate,
+        material_rows: materialRows,
+        qc_status_value: qcStatus,
+        qc_notes_value: qcNotes,
+      }),
     });
+    const json = await res.json();
+    const error = res.ok ? null : { message: json.error ?? "Failed" };
     setLoading(false);
     if (error) {
       setMessage(error.message);
@@ -98,6 +103,7 @@ export function ProductionRunForm({
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
+      <div className="flex justify-end"><PdfHelp guide="08-production-runs" /></div>
       <div className="grid gap-4 md:grid-cols-3">
         <label className="text-sm font-semibold text-[#334536]">
           Finished product

@@ -9,7 +9,7 @@ depends on that answer.
 
 | Object | Location | Purpose |
 | --- | --- | --- |
-| `public.tally_invoice_lines` | `supabase/migrations/20260925091700_stage10_tally_export.sql` | One row per invoice line, with header amounts repeated on the first line only |
+| `public.tally_invoice_lines` | `database/migrations/20260925091700_stage10_tally_export.sql` | One row per invoice line, with header amounts repeated on the first line only |
 | `public.tally_payment_lines` | same migration | One row per payment allocation, plus one row for any unallocated remainder |
 | `public.record_tally_export(...)` | same migration | Records that an export was generated, who generated it, the period, the row count, and an optional checksum |
 | `public.tally_exports` | same migration | Audit trail of every export ever generated |
@@ -165,3 +165,4 @@ order by e.created_at desc;
   no file has ever been loaded into Tally.
 - Do not treat any part of the Tally integration as working until items 1 to 7
   above are answered and a round trip has been reconciled against Tally.
+
